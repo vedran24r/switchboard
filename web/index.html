@@ -453,6 +453,46 @@
   body.phone.vv { height: var(--vvh, 100dvh); }
   body.phone.kb #tabs { display: none; }
   body.phone.vv aside.open { bottom: auto !important; height: var(--vvh, 100dvh); }
+  /* ---------- Desk layout (the default on a computer): Switchboard chat | session list | the open session.
+     The bubble map is still there as Settings → Layout → Map (or ?layout=map). ---------- */
+  body.deck { grid-template-columns: var(--chat-w, 34vw) 290px minmax(0, 1fr); }
+  body.deck #mapwrap { display: none; }
+  body.deck #list { display: flex; grid-row: 1; grid-column: 2; min-height: 0; padding-top: 12px; border-right: 1px solid var(--line); }
+  body.deck #list h1 { font-size: 14px; margin: 2px 12px 8px; }
+  body.deck #list h1 .newbtn { font-size: 12px; padding: 3px 9px; }
+  body.deck #rows { flex: 1; overflow-y: auto; min-height: 0; }
+  body.deck .srow-s { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 1px 8px; padding: 8px 10px 8px 9px; border-left: 3px solid transparent; cursor: pointer; }
+  body.deck .srow-s:hover { background: var(--soft); }
+  body.deck .srow-s.on { background: color-mix(in srgb, var(--tint) 16%, var(--panel)); border-left-color: var(--tint); }
+  body.deck .srow-s .av { width: 30px; height: 30px; font-size: 15px; }
+  body.deck .srow-s .nm { font-size: 13.5px; } body.deck .srow-s .rt { font-size: 10.5px; } body.deck .srow-s .ln { font-size: 12px; }
+  body.deck .srow-s .st { margin-left: 5px; }
+  body.deck .srow-s.flash { animation: rowflash 1.4s ease; }
+  @keyframes rowflash { 0%, 40% { background: color-mix(in srgb, var(--tint) 35%, var(--panel)); } }
+  body.deck #list #settings { position: static; width: auto; margin: 8px 10px 10px; flex: none; }
+  body.deck #list .trustwaits { margin: 0 10px; }
+  body.deck aside#panel { position: relative; inset: auto; grid-row: 1; grid-column: 3; display: flex; width: auto; max-height: none; height: 100vh; height: 100dvh;
+    border: 0; border-radius: 0; box-shadow: none; padding: 14px 22px 12px; z-index: auto; min-width: 0; }
+  body.deck aside#panel:not(.open) { align-items: center; justify-content: center; color: var(--muted); }
+  body.deck aside#panel:not(.open)::before { content: "Pick a session on the left."; }
+  body.deck aside .close, body.deck aside .grow, body.deck aside .pinpop, body.deck aside .replyhere { display: none; }
+  body.deck aside h2 { margin-right: 0; font-size: 18px; }
+  body.deck aside .plog { font-size: 14.5px; }
+  body.deck aside .pcomposer textarea { font-size: 14.5px; }
+  /* "Needs you": every session waiting on you, at the top of the Switchboard chat, answerable right there. */
+  #needs { display: none; }
+  body.deck #needs:not(:empty) { display: grid; gap: 6px; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); max-height: 42vh; overflow-y: auto; }
+  #needs .nh { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--needs); }
+  .ncard { border: 1px solid var(--line); border-left: 3px solid var(--tint); border-radius: 8px; padding: 7px 10px 8px; background: color-mix(in srgb, var(--tint) 9%, var(--panel)); font-size: 13px; }
+  .ncard .nq { margin: 4px 0 6px; overflow-wrap: anywhere; }
+  .ncard .nbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ncard .nbtns button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 7px; padding: 3px 10px; font-size: 12.5px; }
+  .ncard .nbtns button.go { border-color: var(--tint); }
+  .ncard .nnote { font-size: 12px; color: var(--muted); margin-top: 4px; } .ncard .nnote.bad { color: var(--bad, #e66); }
+  /* "@name message" in the main box goes straight to that session: the suggestions under the box. */
+  #atlist { display: none; grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); align-items: center; }
+  #atlist.on { display: flex; }
+  #atlist .chip { cursor: pointer; }
   /* "＋ New": a folder list, then an optional name and the first prompt. A centred box on desktop, full screen on a phone. */
   .newbtn { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--ink); border-radius: 8px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; }
   #mapwrap > .newbtn { position: absolute; left: 16px; bottom: 12px; z-index: 2; }
@@ -509,6 +549,7 @@
     <div id="status">connecting…</div>
   </header>
   <div id="notice"></div>
+  <div id="needs" aria-label="Waiting on you"></div>
   <button type="button" class="newpill" id="newpill" hidden>New messages ↓</button>
   <div id="log"><div class="hint">Talk or type. Each idea goes to the session it belongs to, or a new one. Watch it fly on the map.</div></div>
   <form id="composer">
@@ -522,6 +563,7 @@
     <div id="hfbar"><span class="hfdot"></span><span id="hftext"></span><button type="button" id="hfoff">Turn off</button>
       <div id="meter" title="Your voice level. Sound below the white line is ignored when the noise gate is on."><i id="meterlevel"></i><b id="meterline"></b></div></div>
     <div id="micnote" aria-live="polite"></div>
+    <div id="atlist"></div>
   </form>
 </section>
 
@@ -567,6 +609,7 @@
   <div id="settings">
     <button type="button" id="settingsbtn" aria-expanded="false">⚙ Settings</button>
     <div id="settingsbody">
+      <div class="srow"><span>Layout</span><button type="button" id="layoutbtn" title="List: chat, session list and the open session side by side. Map: the bubble map with popups.">list</button></div>
       <div class="srow"><span>Hands-free</span><button type="button" id="hfbtn">off</button></div>
       <div class="srow"><span>Mic</span><button type="button" id="micbtn">off</button></div>
       <div class="srow"><span title="Turn hands-free off when no speech (that passes the noise gate) is heard for this long">Stop after silence</span>
@@ -1475,7 +1518,82 @@ function makeComposer({ form, input, mic, note, onSend }) {
 }
 
 const input = $("input");
-const mainComposer = makeComposer({ form: $("composer"), input, mic: $("mic"), note: $("micnote"), onSend: (text) => sayText(text) });
+const mainComposer = makeComposer({ form: $("composer"), input, mic: $("mic"), note: $("micnote"), onSend: (text) => atSend(text) ?? sayText(text) });
+
+/* "@Beta check the logs" in the main box goes straight to that session (typed as you, so it can answer it), shown in its
+   pane with the usual delivery states. A name nobody has goes to Switchboard as it is. Longest name wins ("Misc 2" over "Misc"). */
+function atTarget(text) {
+  if (!text.startsWith("@")) return null;
+  const rest = text.slice(1).toLowerCase();
+  let best = null;
+  for (const n of nodes.values()) for (const name of new Set([n.s.display, n.s.name].filter(Boolean))) {
+    const k = name.toLowerCase();
+    if (rest.startsWith(k) && /^($|[\s:,])/.test(rest.slice(k.length)) && (!best || k.length > best.k.length)) best = { n, k };
+  }
+  return best && { n: best.n, body: text.slice(1 + best.k.length).replace(/^[\s:,]+/, "") };
+}
+function atSend(text) {
+  const t = deck && atTarget(text);
+  if (!t) return undefined;
+  if (!t.body.trim()) { $("micnote").textContent = `Write the message after @${t.n.s.display || t.n.s.name}.`; return Promise.resolve(); }
+  if (selected !== t.n.s.sessionId) select(t.n.s.sessionId);
+  $("micnote").textContent = `→ sent to ${t.n.s.display || t.n.s.name} directly`;
+  return sayToSession(t.body);
+}
+// While you type "@…": the matching sessions as chips; a click fills in the name.
+function renderAt() {
+  const box = $("atlist"), v = input.value;
+  const m = deck && v.match(/^@([^\n]*)$/) && !atTarget(v + " ")?.body ? v.slice(1).toLowerCase() : null;
+  if (m === null || /\s{2}/.test(m)) { box.classList.remove("on"); box.innerHTML = ""; return; }
+  const hits = [...nodes.values()].filter((n) => (n.s.display || n.s.name).toLowerCase().startsWith(m) || n.s.name.toLowerCase().startsWith(m)).slice(0, 8);
+  box.classList.toggle("on", hits.length > 0);
+  box.innerHTML = hits.length ? `<span>Send straight to:</span>` + hits.map((n) => chipHtml({ ...lookOf(n.s.name), name: n.s.name }).replace("data-session=", "data-at=")).join("") : "";
+}
+input.addEventListener("input", renderAt);
+$("atlist").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-at]"); if (!c) return;
+  const n = byName(c.dataset.at); if (!n) return;
+  input.value = `@${n.s.display || n.s.name} `; input.focus(); renderAt(); autosize();
+});
+
+/* "Needs you": a card per session waiting on you (any question, permission or picker), at the top of the chat. Simple
+   choices are answered right on the card (the same keys/replies as the session's own quick buttons); a picker form or a
+   blocked folder opens that session next to it. */
+function renderNeeds(sorted) {
+  const box = $("needs"); if (!box) return;
+  const waiting = deck ? sorted.filter((s) => askOf(s)) : [];
+  const html = waiting.length ? `<div class="nh">Waiting on you · ${waiting.length}</div>` + waiting.map((s) => {
+    const ask = askOf(s), look = lookOf(s.name);
+    // The question itself: the picker's, else the last sentence of its reply that asks something.
+    const asked = (s.lastReply || "").replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).filter((x) => /\?\s*\W*$/.test(x)).at(-1);
+    const q = ask.question || asked || ask.note || short((s.lastReply || "").replace(/\s+/g, " "), 220) || "It's waiting for you.";
+    const buttons = s.askBlocked ? "" : ask.options.map((o, i) => `<button type="button" data-nq="${i}" title="${o.key ? `Presses ${esc(o.key)} in its terminal` : `Sends “${esc(o.send)}”`}">${esc(o.label)}</button>`).join("");
+    const open = ask.picker && !ask.options.length ? "Answer the form →" : buttons ? "Open" : "Answer →";
+    return `<div class="ncard" data-sid="${esc(s.sessionId)}" style="--tint:${esc(look.color)}">${chipHtml(look)} <span class="label">${esc(ago(s.lastActivity))} ago</span>
+      <div class="nq">${esc(short(q, 260))}</div><div class="nbtns">${buttons}<button type="button" class="go" data-nopen>${open}</button></div>
+      ${s.askBlocked ? `<div class="nnote">Blocked folder: answer it in its own terminal.</div>` : `<div class="nnote" role="status"></div>`}</div>`;
+  }).join("") : "";
+  if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+}
+$("needs").addEventListener("click", async (e) => {
+  const card = e.target.closest(".ncard"), btn = e.target.closest("button"); if (!card || !btn || btn.classList.contains("chip")) return;
+  const n = nodes.get(card.dataset.sid); if (!n) return;
+  if (btn.hasAttribute("data-nopen")) {
+    if (selected !== n.s.sessionId) select(n.s.sessionId);
+    setView("chat");
+    setTimeout(() => { const f = $("p-log")?.querySelector(".aform:not(.sent)"); f ? f.scrollIntoView({ block: "nearest" }) : $("p-input")?.focus(); }, 300);
+    return;
+  }
+  const ask = askOf(n.s), o = ask?.options[Number(btn.dataset.nq)]; if (!o || n.s.askBlocked) return;
+  const note = card.querySelector(".nnote");
+  card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  try {
+    if (o.key) await post("/api/session/key", { sessionId: n.s.sessionId, key: o.key });
+    else await post("/api/session/say", { sessionId: n.s.sessionId, text: o.send, quick: true });
+    if (note) note.textContent = `Sent: ${o.key ? `pressed ${o.key}` : o.send}`;
+  } catch (err) { if (note) { note.textContent = `Not sent: ${err.message}`; note.classList.add("bad"); } }
+  finally { card.querySelectorAll("button").forEach((b) => (b.disabled = false)); }
+});
 const autosize = mainComposer.autosize;
 let popupComposer = null;
 // Ctrl+Space: mic on/off for the chat you're in (the open session popup if focus is there, else Switchboard).
@@ -1902,7 +2020,7 @@ function hoverNode(n, entering) {
 }
 function scheduleClose() {
   clearTimeout(closeTimer);
-  closeTimer = setTimeout(() => { if (selected && !popupPinned && !overNode && !panel.matches(":hover") && !popupBusy()) select(null); }, HOVER.closeMs);
+  closeTimer = setTimeout(() => { if (deck) return; if (selected && !popupPinned && !overNode && !panel.matches(":hover") && !popupBusy()) select(null); }, HOVER.closeMs);
 }
 const popupBusy = () => panel.contains(document.activeElement) || !!$("p-input")?.value.trim() || !!(rec && popupComposer && rec.owner === popupComposer);
 function clickNode(n) {
@@ -1914,15 +2032,16 @@ panel.addEventListener("pointerenter", () => clearTimeout(closeTimer));
 panel.addEventListener("pointerleave", scheduleClose);
 panel.addEventListener("pointerdown", () => setSticky(true));
 document.addEventListener("pointerdown", (e) => {
-  if (!selected || !popupPinned) return;
+  if (!selected || !popupPinned || deck) return;
   if (panel.contains(e.target) || e.target.closest?.(".node")) return;
   select(null);
 });
-addEventListener("keydown", (e) => { if (e.key === "Escape" && selected) select(null); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && selected && !deck) select(null); });
 
 function followRoute(n) {
   // On a phone a popup is the whole screen: never open one by itself.
   if (!n || selected === n.s.sessionId || phone) return;
+  if (deck) { const r = document.querySelector(`#rows .srow-s[data-id="${CSS.escape(n.s.sessionId)}"]`); if (r) { r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); } return; }
   if (selected && nodes.has(selected)) {
     const busy = popupPinned || panel.contains(document.activeElement) || $("p-input")?.value.trim() ||
       (rec && popupComposer && rec.owner === popupComposer) || ($("p-newpill") && !$("p-newpill").hidden);
@@ -1941,6 +2060,7 @@ function select(id, { auto = false, hover = false } = {}) {
   if (rec && popupComposer && rec.owner === popupComposer) popupComposer.stop({ send: false });
   selected = id;
   for (const n of nodes.values()) n.g.classList.toggle("selected", n.s.sessionId === id);
+  for (const r of document.querySelectorAll("#rows .srow-s")) r.classList.toggle("on", r.dataset.id === id);
   stopTerm(); ctrlcArmed = 0; changesRun++; changesFile = null;
   popup = { id, pending: id ? pendingFor(id) : [], chat: [], canType: !!chatCache.get(id)?.canType, view: sheetView };
   popupComposer = null;
@@ -1971,6 +2091,7 @@ function select(id, { auto = false, hover = false } = {}) {
       <button type="submit" class="round small send" aria-label="Send">${$("send").innerHTML}</button>
       <div class="pnote" id="p-note"></div>
     </form>`;
+  if (deck) $("p-form").classList.remove("collapsed");
   if (phone) { $("p-form").classList.remove("collapsed"); history.state?.sb === "session" ? history.replaceState({ sb: "session" }, "") : history.pushState({ sb: "session" }, ""); }
   popupComposer = makeComposer({ form: $("p-form"), input: $("p-input"), mic: $("p-mic"), note: $("p-note"), onSend: sayToSession });
   popup.log = makeLog($("p-log"), $("p-newpill"), { identity: false, askForm: !n.s.askBlocked });
@@ -2442,6 +2563,7 @@ document.addEventListener("click", async (e) => {
 
 function placePopup() {
   const n = nodes.get(selected);
+  if (deck) { panel.style.left = panel.style.top = ""; return; }
   if (!n || innerWidth <= 860) return;
   const { w, h } = size(), pw = panel.offsetWidth, ph = panel.offsetHeight;
   // Keep clear of the settings pane when it's open.
@@ -2533,16 +2655,27 @@ document.addEventListener("click", async (e) => {
 });
 
 /* ---------- Phone ---------- */
-function setPhone() {
-  const on = matchMedia("(max-width: 700px)").matches;
-  if (on === phone) return;
-  phone = on;
+/* Layout on a computer: "list" (the desk: chat | sessions | the open session) or "map" (bubbles + popups). */
+let layout = "list";
+try { layout = new URLSearchParams(location.search).get("layout") || localStorage.getItem("sb-layout") || "list"; } catch {}
+if (layout !== "map") layout = "list";
+let deck = false;
+function setPhone(force = false) {
+  const on = matchMedia("(max-width: 700px)").matches, desk = !on && layout === "list";
+  if (on === phone && desk === deck && !force) return;
+  phone = on; deck = desk;
   document.body.classList.toggle("phone", on);
-  // The settings live in the Settings tab on a phone, on the map otherwise.
-  // The session sheet must not live inside the map pane: that pane is hidden on the other tabs.
-  if (on) document.body.appendChild(panel); else $("mapwrap").insertBefore(panel, $("map").nextSibling);
-  (on ? $("more") : $("mapwrap")).insertBefore($("settings"), on ? $("remoteinfo") : panel.nextSibling);
-  $("input").placeholder = on ? "Say or type…" : "Say or type… (Enter sends, Shift+Enter new line)";
+  document.body.classList.toggle("deck", desk);
+  $("layoutbtn").textContent = layout;
+  // The settings live in the Settings tab on a phone, in the session list on the desk, on the map otherwise.
+  // The session sheet must not live inside the map pane: that pane is hidden on the other tabs (and on the desk).
+  if (on || desk) document.body.appendChild(panel); else $("mapwrap").insertBefore(panel, $("map").nextSibling);
+  if (on) $("more").insertBefore($("settings"), $("remoteinfo"));
+  else if (desk) $("list").appendChild($("settings"));
+  else $("mapwrap").insertBefore($("settings"), panel.nextSibling);
+  if (desk && !selected && lastList.length) renderList(lastList);
+  $("input").placeholder = on ? "Say or type…" : desk ? "Say or type… @name sends to one session" : "Say or type… (Enter sends, Shift+Enter new line)";
+  if (desk) panel.style.left = panel.style.top = "";
   if (on) setTab(document.body.dataset.tab || "chat");
 }
 function setTab(tab) {
@@ -2550,6 +2683,11 @@ function setTab(tab) {
   for (const b of $("tabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.tab === tab);
   try { sessionStorage.setItem("sb-tab", tab); } catch {}
 }
+$("layoutbtn").addEventListener("click", () => {
+  layout = layout === "list" ? "map" : "list";
+  try { localStorage.setItem("sb-layout", layout); } catch {}
+  setPhone(true);
+});
 $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setTab(b.dataset.tab); });
 // ?tab=list|map|more|chat opens that tab (handy for a home screen shortcut); else the last one in this tab.
 try { document.body.dataset.tab = new URLSearchParams(location.search).get("tab") || sessionStorage.getItem("sb-tab") || "chat"; } catch {}
@@ -2572,12 +2710,14 @@ function renderAgents(s) {
 
 /* The Sessions tab: everything on the map as a list, the ones waiting on you first. */
 const RANK = { "needs-you": 0, working: 2, idle: 3, stale: 4 };
+let lastList = [];
 function renderList(list) {
+  lastList = list;
   const rank = (s) => askOf(s) ? 0 : isUnread(s) && s.state !== "working" ? 1 : RANK[s.state] ?? 5;
   const sorted = [...list].sort((a, b) => rank(a) - rank(b) || b.lastActivity - a.lastActivity);
   const html = sorted.map((s) => {
     const label = s.state === "needs-you" ? "needs you" : s.state, line = (s.doing || "").replace(/\s+/g, " ").trim();
-    return `<button type="button" class="srow-s" data-id="${esc(s.sessionId)}">
+    return `<button type="button" class="srow-s${s.sessionId === selected ? " on" : ""}" data-id="${esc(s.sessionId)}" style="--tint:${esc(s.color || "var(--accent)")}">
       <span class="av" style="background:${esc(s.color)}">${esc(s.icon)}${askOf(s) ? `<span class="q">?</span>` : ""}${isUnread(s) ? `<span class="u"></span>` : ""}</span>
       <span class="nm" title="${esc(s.name)}">${esc(s.display || s.name)}<span class="st ${s.state}">${label}</span></span>
       <span class="rt${s.needsHandoff ? " hot" : ""}">${s.agents?.length ? `<span class="ag" title="${esc(agentsTip(s.agents))}">🤖${s.agents.length > 1 ? s.agents.length : ""}</span> ` : ""}${Math.round(s.contextTokens / 1000)}k · ${ago(s.lastActivity)}</span>
@@ -2585,6 +2725,9 @@ function renderList(list) {
   }).join("") || `<div class="empty">No live sessions.</div>`;
   // Only touch the DOM when something changed, or taps get swallowed mid-redraw.
   if ($("rows").dataset.html !== html) { $("rows").dataset.html = html; $("rows").innerHTML = html; }
+  renderNeeds(sorted);
+  // The desk always shows a session: the first in the list (waiting on you first) until you pick one.
+  if (deck && !selected && sorted.length) select(sorted[0].sessionId);
   const waiting = list.filter((s) => askOf(s) || s.state === "needs-you").length;
   $("needsbadge").textContent = waiting || "";
   try { waiting ? navigator.setAppBadge?.(waiting) : navigator.clearAppBadge?.(); } catch {}

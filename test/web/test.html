@@ -13,7 +13,7 @@
 <h1>Switchboard browser tests</h1>
 <p>Runs against a test server with fake sessions (<code>npm test</code>). Nothing is sent anywhere.</p>
 <ol id="out"></ol>
-<iframe id="a" src="/"></iframe>
+<iframe id="a" src="/?layout=map"></iframe>
 <script>
 /*
  * Every check runs INSIDE the map page (frame A, and frame B for the two-tab checks) via the frame's own
@@ -874,7 +874,7 @@ const HELPERS = () => {
 
   // ---- two tabs ----
   const B = document.createElement("iframe");
-  B.src = "/";
+  B.src = "/?layout=map";
   await run(A, () => { localStorage.setItem("sb-handsfree", "1"); hf = { node: { disconnect() {} }, stream: { getTracks: () => [] }, ctx: { close() {} }, queue: Promise.resolve() }; claimMic(); return true; });
   document.body.appendChild(B);
   await new Promise((r) => (B.onload = r));
@@ -906,6 +906,63 @@ const HELPERS = () => {
     T.eq(collapseLong, true, "collapse setting"); T.eq(chatWidth, 520, "chat width"); return "ok";
   });
   await run(A, () => { $("collapsebtn").click(); applyWidth(380); localStorage.setItem("sb-chat-w", 380); return true; });
+
+  // ---- the desk (the default layout on a computer): chat | session list | the open session ----
+  const D = document.createElement("iframe");
+  D.src = "/";
+  document.body.appendChild(D);
+  await new Promise((r) => (D.onload = r));
+  await sleep(2500);
+  await run(D, HELPERS);
+  await check("desk: chat, session list and one open session side by side; no bubbles; the pane fills the height", D, () => {
+    const shown = ["chat", "list", "panel", "mapwrap"].filter((id) => getComputedStyle($(id)).display !== "none");
+    const p = panel.getBoundingClientRect(), c = $("chat").getBoundingClientRect(), l = $("list").getBoundingClientRect();
+    const on = document.querySelector("#rows .srow-s.on");
+    T.eq({ deck: document.body.classList.contains("deck"), shown, order: c.right <= l.left + 1 && l.right <= p.left + 1, full: Math.round(p.top) === 0 && Math.round(p.bottom) === innerHeight,
+      wide: p.width > innerWidth * 0.45, open: panel.classList.contains("open"), rowOn: on?.dataset.id === selected, first: document.querySelector("#rows .srow-s")?.dataset.id === selected,
+      composer: !$("p-form").classList.contains("collapsed"), settings: $("list").contains($("settings")) },
+      { deck: true, shown: ["chat", "list", "panel"], order: true, full: true, wide: true, open: true, rowOn: true, first: true, composer: true, settings: true }, "desk");
+    return "ok";
+  });
+  await check("desk: a row click switches the pane; Esc, outside clicks and new routes never close or switch it", D, async () => {
+    const beta = T.node("Beta").s.sessionId;
+    document.querySelector(`#rows .srow-s[data-id="${beta}"]`).click(); await T.sleep(50);
+    const after = selected;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    $("log").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    followRoute(T.node("Waiting")); await T.sleep(50);
+    T.eq([after, selected, document.querySelector(`#rows .srow-s[data-id="${T.node("Waiting").s.sessionId}"]`).classList.contains("flash")], [beta, beta, true], "stays on Beta; Waiting's row flashes");
+    return "ok";
+  });
+  await check("desk: 'Waiting on you' cards in the chat; a choice is sent from the card; blocked folders get no buttons", D, async () => {
+    const card = (name) => document.querySelector(`#needs .ncard[data-sid="${T.node(name).s.sessionId}"]`);
+    const w = card("Waiting"), cl = card("Client");
+    T.assert(w && cl, "cards for Waiting and Client");
+    T.eq([...w.querySelectorAll("[data-nq]")].map((b) => b.textContent), ["Yes", "No"], "Waiting's choices");
+    T.eq([cl.querySelectorAll("[data-nq]").length, /Blocked folder/.test(cl.textContent)], [0, true], "blocked: no buttons");
+    w.querySelector("[data-nq='0']").click();
+    for (let i = 0; i < 30 && !w.querySelector(".nnote").textContent; i++) await T.sleep(100);
+    // The fixture session has no terminal: the real /api/session/say answers with its error, which proves the click went there.
+    T.assert(/Not sent: .*doesn't run in tmux/.test(w.querySelector(".nnote").textContent), w.querySelector(".nnote").textContent);
+    w.querySelector("[data-nopen]").click(); await T.sleep(50);
+    T.eq(selected, T.node("Waiting").s.sessionId, "Open shows it in the pane");
+    T.eq(T.sent.length, 0, "nothing went to Switchboard");
+    return "ok";
+  });
+  await check("desk: '@name message' goes straight to that session (shown in its pane); unknown names go to Switchboard", D, async () => {
+    T.sent.length = 0;
+    input.value = "@be"; input.dispatchEvent(new Event("input"));
+    const chips = [...$("atlist").querySelectorAll("[data-at]")].map((c) => c.dataset.at);
+    $("atlist").querySelector("[data-at]").click();
+    const filled = input.value;
+    input.value = "@Beta: check the logs for Sam"; $("composer").requestSubmit(); await T.sleep(300);
+    const pend = pendingFor(T.node("Beta").s.sessionId).map((p) => p.text);
+    input.value = "@Nobody do a thing"; $("composer").requestSubmit(); await T.sleep(300);
+    T.eq({ chips, filled, selected: selected === T.node("Beta").s.sessionId, pend: pend.includes("check the logs for Sam"), toSwitchboard: T.sent },
+      { chips: ["Beta"], filled: "@Beta ", selected: true, pend: true, toSwitchboard: ["@Nobody do a thing"] }, "@name");
+    return "ok";
+  });
+  D.remove();
 
   // ---- phone (390×844, like a phone in portrait) ----
   const P = document.createElement("iframe");
