@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { HOME, STATE_DIR, expand, isBlocked, loadConfig, type Config } from "./config.ts";
 import { listSessions, readTail, type Session } from "./sessions.ts";
@@ -39,6 +39,8 @@ export interface ChatLine {
   /** role "ask" (AskUserQuestion): the questions, and the answers once given. */
   questions?: { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }[];
   answers?: Record<string, string>;
+  /** role "you": typed while it was busy and taken in mid-turn (recorded as a queued_command attachment). */
+  queued?: boolean;
 }
 export interface Route { id: string; at: number; kind: "send" | "spawn"; target: string; text: string }
 
@@ -270,7 +272,7 @@ export function dispatcherFeed(config: Config = loadConfig()) {
   if (target) feed.attach = target.pocket ? `pocket attach ${target.name}` : `sb attach ${target.name}`;
   if (!me?.transcript || !existsSync(me.transcript)) return feed;
 
-  Object.assign(feed, readChat(me.transcript, me.cwd));
+  Object.assign(feed, readChat(me.transcript, me.cwd, 120));
   feed.chat = feed.chat.slice(-120);
   feed.routes = feed.routes.slice(-40);
   return feed;
@@ -334,11 +336,23 @@ export function noticeLine(raw: string): { text: string; session?: string } {
 export const replySession = (text: string) => text.match(/^(?:→|＋|\+)\s*([^:(\n*]{1,60}?)\s*[:(—-]/)?.[1]?.trim();
 
 /** Chat lines (what was said, both ways) and routes (messages sent / sessions started) from a transcript tail. */
-function readChat(transcript: string, cwd = "") {
+/**
+ * The tail is read in a growing window: one screenshot Claude read is a single 600 KB+ line, so a fixed 512 KB tail
+ * could hold no chat at all (and a message you sent then never showed as picked up).
+ */
+export function readChat(transcript: string, cwd = "", want = 80) {
+  if (!existsSync(transcript)) return { chat: [] as ChatLine[], routes: [] as Route[] };
+  const size = statSync(transcript).size;
+  for (let bytes = 512 * 1024; ; bytes *= 4) {
+    const got = readChatTail(readTail(transcript, bytes), cwd);
+    if (got.chat.length >= want || bytes >= size || bytes >= 16 * 1024 * 1024) return got;
+  }
+}
+
+function readChatTail(tail: string, cwd: string) {
   const chat: ChatLine[] = [], routes: Route[] = [];
   const asks = new Map<string, ChatLine>(); // AskUserQuestion tool_use id → its card, to fill in the answers
-  if (!existsSync(transcript)) return { chat, routes };
-  for (const line of readTail(transcript, 512 * 1024).split("\n")) {
+  for (const line of tail.split("\n")) {
     let entry: any;
     try {
       entry = JSON.parse(line);
@@ -348,6 +362,14 @@ function readChat(transcript: string, cwd = "") {
     if (entry.isSidechain || entry.isMeta) continue;
     const at = Date.parse(entry.timestamp) || 0;
     const content = entry.message?.content;
+    // A message typed while the session was busy is taken in mid-turn and only recorded as a queued_command attachment,
+    // never as a user line (2.1.300). Task notifications use the same attachment, but start with "<task-notification>".
+    const queued = entry.type === "attachment" && entry.attachment?.type === "queued_command" && entry.attachment.commandMode === "prompt" ? entry.attachment : undefined;
+    if (queued) {
+      const text = (typeof queued.prompt === "string" ? queued.prompt : textOf(queued.prompt)).trim();
+      if (text && !text.startsWith("<") && queued.origin?.kind !== "task") chat.push({ id: entry.uuid, at, role: "you", text, queued: true });
+      continue;
+    }
     if (entry.type === "user" && Array.isArray(content)) for (const b of content) {
       const card = b?.type === "tool_result" ? asks.get(b.tool_use_id) : undefined;
       if (card) card.answers = entry.toolUseResult?.answers ?? { "": textOf(b.content) || String(b.content ?? "") };
@@ -370,6 +392,9 @@ function readChat(transcript: string, cwd = "") {
       if (text.startsWith("<cross-session") || text.startsWith("[Cross-session")) {
         chat.push({ id: entry.uuid, at, role: "notice", ...noticeLine(text) });
       } else if (!text.startsWith("<")) {
+        // Some versions also write the queued message as a user line afterwards: show it once.
+        const prev = chat.findLast((c) => c.role === "you");
+        if (prev?.queued && prev.text === text && at - prev.at < 10 * 60_000) { delete prev.queued; continue; }
         chat.push({ id: entry.uuid, at, role: "you", text });
       }
     }

@@ -432,6 +432,35 @@ test("shell commands and /commands you typed show as your own lines, with their 
   assert.deepEqual(chat.map((c) => [c.text, c.output]), [["! ls src", "a.ts\nb.ts"], ["/rename Ticket work", "Session renamed"]]);
 });
 
+test("a message typed while the session was busy (taken in mid-turn) shows as your own line, once; task notifications don't", async () => {
+  const { readChat } = await import("../src/dispatcher.ts");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sb-queued-")), file = path.join(dir, "t.jsonl"), t0 = Date.parse("2026-11-02T15:02:00Z");
+  const at = (s: number) => new Date(t0 + s * 1000).toISOString();
+  const attach = (uuid: string, s: number, prompt: string, kind = "human") => ({ type: "attachment", uuid, timestamp: at(s),
+    attachment: { type: "queued_command", prompt, commandMode: "prompt", origin: { kind }, humanTurn: kind === "human" } });
+  const text = "also the input is cut off at the bottom\n[image: /tmp/x.png]";
+  writeFileSync(file, [
+    { type: "user", uuid: "u1", timestamp: at(0), message: { role: "user", content: "fix the picker for Sam" } },
+    { type: "queue-operation", operation: "enqueue", timestamp: at(10), content: text },
+    attach("q1", 11, text),
+    attach("q2", 12, "<task-notification><task-id>a1</task-id><status>completed</status></task-notification>", "task"),
+    { type: "assistant", uuid: "a1", timestamp: at(20), message: { role: "assistant", content: [{ type: "text", text: "Found it." }] } },
+    attach("q3", 30, "and the same again later"),
+    { type: "user", uuid: "u2", timestamp: at(31), message: { role: "user", content: "and the same again later" } },
+  ].map((x) => JSON.stringify(x)).join("\n") + "\n");
+  const you = readChat(file).chat.filter((c) => c.role === "you");
+  assert.deepEqual(you.map((c) => [c.id, c.text, c.queued]), [["u1", "fix the picker for Sam", undefined], ["q1", text, true], ["q3", "and the same again later", undefined]]);
+});
+
+test("chat survives a screenshot in the transcript: one huge line doesn't push every message out of the tail", async () => {
+  const { readChat } = await import("../src/dispatcher.ts");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sb-bigline-")), file = path.join(dir, "t.jsonl"), at = (s: number) => new Date(Date.parse("2026-11-02T15:00:00Z") + s * 1000).toISOString();
+  const image = { type: "user", uuid: "img", timestamp: at(2), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_r", content: [{ type: "image", source: { type: "base64", data: "A".repeat(700 * 1024) } }] }] } };
+  writeFileSync(file, [{ type: "user", uuid: "u1", timestamp: at(0), message: { role: "user", content: "here's a screenshot for Mirza" } }, image,
+    { type: "assistant", uuid: "a1", timestamp: at(3), message: { role: "assistant", content: [{ type: "text", text: "I see it." }] } }].map((x) => JSON.stringify(x)).join("\n") + "\n");
+  assert.deepEqual(readChat(file).chat.map((c) => c.role), ["you", "switchboard"]);
+});
+
 test("spawn without Pocket: our own tmux, through a login shell, name sb-<profile>-<folder>, prompt quoted safely", async () => {
   const { chmodSync, readFileSync: read } = await import("node:fs");
   const { execFileSync } = await import("node:child_process");
