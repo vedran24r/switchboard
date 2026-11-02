@@ -1,0 +1,6 @@
+#!/bin/sh
+# Switchboard CLI. Symlink into PATH: ln -s ~/Projects/switchboard/bin/sb ~/.local/bin/sb
+DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# Running sessions in a terminal is plain bash (it has to exec tmux); everything else is the Node CLI.
+case "${1:-}" in run | attach | sessions) exec "$DIR/bin/sb-run" "$@" ;; esac
+exec node --disable-warning=ExperimentalWarning "$DIR/src/cli.ts" "$@"

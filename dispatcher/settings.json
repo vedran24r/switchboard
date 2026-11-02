@@ -1,0 +1,6 @@
+{
+  "model": "sonnet",
+  "permissions": {
+    "allow": ["Bash(sb ls:*)", "Bash(sb spawn:*)", "Bash(sb send:*)", "Bash(sb pulse:*)", "Bash(ls ~/.switchboard/handoffs:*)"]
+  }
+}

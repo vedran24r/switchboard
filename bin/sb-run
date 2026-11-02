@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# sb run — start Claude Code inside Switchboard's tmux (`tmux -L switchboard`), so the map and your
+# phone can see it and type into it. Your shell's `claude` can point here:  claude() { sb run "$@"; }
+#
+#   sb run [claude args...]    a Claude Code session for this folder, attached to this terminal
+#   sb attach <name>           reattach to a session you detached from (prefix + d)
+#   sb sessions                list them
+#
+# Closing the terminal window ends its session; SB_KEEP_ON_CLOSE=1 keeps it running instead.
+# Plain commands (claude --version, claude -p …, claude mcp …) run directly, not in tmux.
+set -euo pipefail
+SB_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+T=(tmux -L "${SB_TMUX_SOCKET:-switchboard}" -f "$SB_DIR/tmux.conf")
+CLAUDE_BIN="${SB_CLAUDE_BIN:-claude}"
+slug() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_' '-' | sed -e 's/--*/-/g' -e 's/^-//' -e 's/-$//'; }
+# The profile label: from CLAUDE_CONFIG_DIR (~/.claude-game → "game", ~/.claude-plex/profiles/work → "work"), else "claude".
+profile() {
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then basename "$CLAUDE_CONFIG_DIR" | sed -e 's/^\.//' -e 's/^claude-//' | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'
+  else echo claude; fi
+}
+attach() {
+  if [[ "${SB_KEEP_ON_CLOSE:-0}" == 1 ]]; then "${T[@]}" set-option -t "=$1:" @sb_keep 1; fi
+  if [[ -n "${TMUX:-}" ]]; then "${T[@]}" switch-client -t "=$1:"; else exec "${T[@]}" attach-session -t "=$1:"; fi
+}
+passthrough() {
+  case "${1:-}" in
+    mcp | plugin | plugins | update | upgrade | doctor | install | config | setup-token | migrate-installer | auth | agents | remote-control | rc) exec "$CLAUDE_BIN" "$@" ;;
+  esac
+  local arg
+  for arg in "$@"; do case "$arg" in -p | --print | -v | --version | -h | --help) exec "$CLAUDE_BIN" "$@" ;; esac; done
+}
+run() {
+  # Already inside tmux, or not a terminal (scripts, pipes): run it directly.
+  if [[ -n "${TMUX:-}" || ! -t 0 || ! -t 1 ]]; then exec "$CLAUDE_BIN" "$@"; fi
+  passthrough "$@"
+  # Images attached on the map or phone land here; allowing the folder up front saves a prompt per image.
+  local uploads="${SB_UPLOADS:-$HOME/.switchboard/uploads}"
+  mkdir -p "$uploads"
+  local base session n=1
+  base="sb-$(profile)-$(slug "$(basename "$PWD")")"
+  session="$base"
+  while "${T[@]}" has-session -t "=$session:" 2>/dev/null; do n=$((n + 1)); session="$base-$n"; done
+  # The tmux server doesn't share this shell's environment: hand it over (PATH, CLAUDE_CONFIG_DIR, nvm, …).
+  local env_args=() kv
+  while IFS= read -r -d '' kv; do
+    case "${kv%%=*}" in TMUX | TMUX_PANE | TERM | SHLVL | PWD | OLDPWD | _ | COLUMNS | LINES) continue ;; esac
+    env_args+=(-e "$kv")
+  done < <(env -0)
+  "${T[@]}" new-session -d -s "$session" -c "$PWD" -x "$(tput cols 2>/dev/null || echo 120)" -y "$(tput lines 2>/dev/null || echo 40)" \
+    "${env_args[@]}" "$CLAUDE_BIN" --add-dir "$uploads" "$@"
+  attach "$session"
+}
+case "${1:-}" in
+  run) shift; run "$@" ;;
+  attach) [[ -n "${2:-}" ]] || { echo "usage: sb attach <session>   (sb sessions lists them)" >&2; exit 1; }; attach "$2" ;;
+  sessions) "${T[@]}" list-sessions -F '#{session_name}  #{?session_attached,(attached),}' 2>/dev/null | grep '^sb-' || echo "no sessions" ;;
+  *) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

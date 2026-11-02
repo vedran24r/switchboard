@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Switchboard browser tests</title>
+<style>
+  body { font: 13px/1.4 -apple-system, sans-serif; margin: 12px; background: #fff; color: #111; }
+  iframe { width: 1400px; height: 900px; border: 1px solid #ccc; display: block; margin-top: 8px; }
+  .ok { color: #15803d; } .fail { color: #b91c1c; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Switchboard browser tests</h1>
+<p>Runs against a test server with fake sessions (<code>npm test</code>). Nothing is sent anywhere.</p>
+<ol id="out"></ol>
+<iframe id="a" src="/"></iframe>
+<script>
+/*
+ * Every check runs INSIDE the map page (frame A, and frame B for the two-tab checks) via the frame's own
+ * eval, so it can use the page's functions and state directly. Sending is stubbed: sayText() only records.
+ */
+const results = [];
+const out = document.getElementById("out");
+const A = document.getElementById("a");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const run = (frame, fn, ...args) => frame.contentWindow.eval(`(${fn})(...${JSON.stringify(args)})`);
+
+async function check(name, frame, fn, ...args) {
+  let row;
+  try { row = { name, ok: true, detail: await run(frame, fn, ...args) }; }
+  catch (e) { row = { name, ok: false, detail: String(e?.message ?? e) }; }
+  results.push(row); console.log(`[check] ${row.ok ? "PASS" : "FAIL"} ${name} ${row.ok ? "" : row.detail}`);
+  const li = document.createElement("li");
+  li.className = row.ok ? "ok" : "fail";
+  li.textContent = `${row.ok ? "PASS" : "FAIL"} ${name}${row.detail ? " — " + JSON.stringify(row.detail) : ""}`;
+  out.appendChild(li);
+}
+
+// ---- helpers injected into each frame ----
+const HELPERS = () => {
+  window.T = {
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    assert(cond, msg) { if (!cond) throw new Error(msg); },
+    eq(a, b, msg) { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); },
+    node: (name) => [...nodes.values()].find((n) => n.s.name === name),
+    sent: [],
+    async audio(file) {
+      const b64 = await (await fetch(`/test/${file}`)).text();
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      return Float32Array.from(new Int16Array(bytes.buffer), (x) => x / 32768);
+    },
+    // Feed 16 kHz audio through the real hands-free pipeline, with a fake clock for calibration.
+    async feed(samples, { calibrate = false } = {}) {
+      hf = { ctx: { sampleRate: 16000, close() {} }, node: { disconnect() {} }, stream: { getTracks: () => [] }, pre: [], seg: [], inSpeech: false, speechRun: 0, silent: 0, segMs: 0, speechMs: 0, noise: 0.01, pending: 0, queue: Promise.resolve() };
+      HF.blockMs = 64;
+      let fake = 1e12; const realNow = Date.now; Date.now = () => fake;
+      calib = calibrate ? { until: fake + 4000, levels: [] } : null;
+      try { for (let i = 0; i + 1024 <= samples.length; i += 1024) { if (hf) hfBlock(samples.slice(i, i + 1024)); fake += 64; } }
+      finally { Date.now = realNow; }
+      const h = hf; if (h) { await hfCut(); await h.queue; }
+      hf = null;
+    },
+  };
+  sayText = (m) => { T.sent.push(m); };
+  return true;
+};
+
+(async () => {
+  await new Promise((r) => (A.onload = r));
+  await sleep(2500);
+  await run(A, HELPERS);
+
+  await check("map draws every fake session (dispatcher is the hub, not a bubble)", A, async () => {
+    for (let i = 0; i < 20 && nodes.size < 7; i++) await T.sleep(250);
+    T.eq([...nodes.values()].map((n) => n.s.name).sort(), ["Beta", "Client", "Compacted", "Old", "Waiting", "Zomb", "repo-abc-12-93"], "bubbles");
+    return nodes.size;
+  });
+
+  await check("bubbles: stale fades, status chips, hand-off ring, icons", A, () => {
+    T.assert(T.node("Old").g.classList.contains("stale"), "Old should be stale");
+    T.eq(T.node("Waiting").chipText.textContent, "needs you", "Waiting chip");
+    T.eq(T.node("Beta").chipText.textContent, "working", "Beta chip");
+    T.assert(T.node("Beta").arc.classList.contains("hot"), "Beta ring should be red (over hand-off)");
+    T.assert(!T.node("Compacted").arc.classList.contains("hot"), "Compacted ring should not be red after compact");
+    T.eq(T.node("Beta").icon.textContent, "🧪", "per-session icon override");
+    T.eq(T.node("Zomb").icon.textContent, "🎮", "game area icon");
+    return "ok";
+  });
+
+  await check("unread dot appears for a new reply and clears when the popup is opened", A, () => {
+    const z = T.node("Zomb"), keep = seenAt[z.s.sessionId];
+    seenAt[z.s.sessionId] = 1; updateSessions(state.sessions);
+    const shown = z.dot.style.display !== "none";
+    select(z.s.sessionId); updateSessions(state.sessions);
+    const after = z.dot.style.display !== "none";
+    select(null); seenAt[z.s.sessionId] = keep; saveSeen();
+    T.assert(shown && !after, `dot shown=${shown}, after opening=${after}`);
+    return "ok";
+  });
+
+  await check("routes: feed has SendMessage / sb spawn / sb send; a new route flies and opens that session's popup", A, async () => {
+    T.eq(state.dispatcher.routes.map((r) => r.kind + ":" + r.target), ["send:Beta", "spawn:New one", "send:Zomb"], "routes");
+    select(null);
+    updateRoutes([...state.dispatcher.routes, { id: "t-route", at: Date.now(), kind: "send", target: "Compacted", text: "hello" }]);
+    await T.sleep(1400);
+    T.eq(nodes.get(selected)?.s.name, "Compacted", "active popup");
+    T.assert(document.activeElement === document.body || document.activeElement === input, "focus must not move");
+    select(null);
+    return "ok";
+  });
+
+  await check("sb pulse: known names pulse with the kind's colour and tag, unknown ignored, nothing sent", A, async () => {
+    const res = await (await fetch("/api/pulse", { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: JSON.stringify({ names: ["Waiting", "Nobody"], kind: "needs-you" }) })).json();
+    T.eq(res, { pulsed: ["Waiting"], unknown: ["Nobody"] }, "server answer");
+    let seen = false, tag = "";
+    for (let i = 0; i < 40 && !seen; i++) { await T.sleep(100); seen = T.node("Waiting").g.classList.contains("flash-needs-you"); tag = document.querySelector(".flashtag.needs-you")?.textContent ?? tag; }
+    T.assert(seen, "Waiting should flash"); T.eq(tag, "needs you", "tag");
+    T.assert(!T.node("Beta").g.className.baseVal.includes("flash"), "others must not flash");
+    T.eq(T.sent.length, 0, "nothing sent");
+    return "ok";
+  });
+
+  await check("delivery states: queued (pale) while busy, combined messages count as read, not picked up / failed get Retry + Discard", A, async () => {
+    const line = (p) => mainLog.els.get(`pending-${p.at}`);
+    const r = {};
+    // queued behind a busy turn
+    const q = { text: "first queued", at: Date.now(), status: "sending", send: async () => {}, busy: () => true };
+    pendingSays.push(q); await deliver(q);
+    r.queued = q.status; r.queuedPale = line(q)?.classList.contains("st-queued"); r.queuedLabel = /Queued/.test(line(q)?.textContent);
+    const q2 = { text: "second queued", at: Date.now() + 1, status: "sending", send: async () => {}, busy: () => true };
+    pendingSays.push(q2); await deliver(q2);
+    // Claude Code reads both queued messages as ONE combined message
+    settlePending(pendingSays, [{ role: "you", at: Date.now(), text: "first queued\nsecond queued" }], false);
+    r.bothSettled = !pendingSays.includes(q) && !pendingSays.includes(q2);
+    // typed, but never showed up: after 2 min while idle → "not picked up" with Retry
+    const s = { text: "lost one", at: Date.now() + 2, status: "sent", typedAt: Date.now() - 200_000 };
+    pendingSays.push(s); renderChat(state.dispatcher);
+    r.stale = s.status; r.staleRetry = !!line(s)?.querySelector(".retry:not(.discard)");
+    pendingSays.splice(pendingSays.indexOf(s), 1); mainLog.drop(`pending-${s.at}`);
+    // failed to type → Retry + Discard; Discard removes it
+    const f = { text: "will fail", at: Date.now() + 3, status: "sending", send: async () => { throw new Error("no dispatcher"); }, busy: () => false };
+    pendingSays.push(f); await deliver(f);
+    r.failed = f.status; r.failedText = /Not delivered: no dispatcher/.test(line(f)?.textContent);
+    line(f).querySelector(".discard").click(); await T.sleep(50);
+    r.discarded = !line(f) && !pendingSays.includes(f);
+    renderChat(state.dispatcher);
+    T.eq(r, { queued: "queued", queuedPale: true, queuedLabel: true, bothSettled: true, stale: "stale", staleRetry: true, failed: "failed", failedText: true, discarded: true }, "states");
+    return "ok";
+  });
+
+  await check("hide message: × removes a line from view only, remembered", A, async () => {
+    const id = state.dispatcher.chat[0].id, el = mainLog.els.get(id);
+    T.assert(el, "line exists"); el.querySelector(".hide").click(); await T.sleep(50);
+    T.assert(!mainLog.els.get(id) && !document.body.contains(el), "line gone");
+    T.assert(JSON.parse(localStorage.getItem("sb-hidden")).includes(id), "remembered");
+    renderChat(state.dispatcher); T.assert(!mainLog.els.get(id), "stays hidden after refresh");
+    window.__hiddenId = id;
+    return "ok";
+  });
+
+  await check("images: paste a big screenshot → downscaled, uploaded, sent as [image: path], shown as thumbnail, click enlarges", A, async () => {
+    const canvas = Object.assign(document.createElement("canvas"), { width: 3200, height: 2000 });
+    const g = canvas.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 3200, 2000); g.fillStyle = "#000"; g.font = "64px sans-serif"; g.fillText("Error: test screenshot", 100, 200);
+    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+    const dt = new DataTransfer(); dt.items.add(new File([blob], "shot.png", { type: "image/png" }));
+    input.focus(); input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    T.eq(mainComposer.attachments.length, 1, "attached");
+    await mainComposer.attachments[0].ready;
+    const a = mainComposer.attachments[0];
+    T.assert(!a.error, "upload error: " + a.error);
+    T.assert(Math.max(a.w, a.h) <= 2560, `downscaled to ${a.w}x${a.h}`);
+    T.assert(document.querySelector("#composer .tray img"), "thumbnail in the tray");
+    T.sent.length = 0; input.value = "what does this error mean?";
+    $("composer").requestSubmit(); for (let i = 0; i < 30 && !T.sent.length; i++) await T.sleep(100);
+    T.assert(/^what does this error mean\?\n\[image: \/.+\/uploads\/switchboard\/switchboard-[\w-]+\.png\]$/.test(T.sent[0]), "message: " + T.sent[0]);
+    T.eq(mainComposer.attachments.length, 0, "tray cleared");
+    mainLog.sync([...state.dispatcher.chat, { id: "t-img", role: "you", text: T.sent[0], at: Date.now() }]);
+    const img = mainLog.els.get("t-img").querySelector(".chatimg");
+    T.assert(img, "thumbnail in the chat");
+    for (let i = 0; i < 30 && !img.naturalWidth; i++) await T.sleep(100);
+    T.assert(img.naturalWidth > 0, "image loads from /api/upload");
+    img.click(); T.assert($("lightbox").classList.contains("open"), "click enlarges");
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); T.assert(!$("lightbox").classList.contains("open"), "Esc closes");
+    // refused type
+    mainComposer.attach(new File(["BM"], "x.bmp", { type: "image/bmp" })); await mainComposer.attachments[0].ready;
+    T.assert(/only PNG/.test(mainComposer.attachments[0].error), "bmp refused: " + mainComposer.attachments[0].error);
+    document.querySelector("#composer .tray [data-rm]").click(); T.eq(mainComposer.attachments.length, 0, "× removes");
+    window.__imgPath = T.sent[0].split("[image: ")[1].slice(0, -1);
+    return `${a.w}x${a.h}`;
+  });
+
+  await check("images: an attached image goes out with the next hands-free message", A, async () => {
+    const canvas = Object.assign(document.createElement("canvas"), { width: 200, height: 100 });
+    canvas.getContext("2d").fillRect(0, 0, 50, 50);
+    mainComposer.attach(new File([await new Promise((r) => canvas.toBlob(r, "image/png"))], "s.png", { type: "image/png" }));
+    T.sent.length = 0; input.value = ""; autoSend = true; gate = { on: false, baseline: null, sens: 10 };
+    await T.feed(await T.audio("hf.b64"));
+    T.eq(T.sent.length, 2, "two spoken messages");
+    T.assert(/flaky/i.test(T.sent[0]) && /\[image: .+\.png\]/.test(T.sent[0]), "image with the first: " + T.sent[0]);
+    T.assert(!/\[image:/.test(T.sent[1]), "not repeated on the second");
+    return "ok";
+  });
+
+  await check("quick replies: '?' on waiting bubbles; popup buttons send via the reply path on click; blocked folder gets none", A, async () => {
+    T.sent.length = 0;
+    T.assert(T.node("Waiting").askG.style.display !== "none", "? on Waiting");
+    T.assert(T.node("Compacted").askG.style.display === "none", "no ? on Compacted");
+    select(T.node("Waiting").s.sessionId); await T.sleep(100);
+    const labels = [...document.querySelectorAll("#p-quick button")].map((b) => b.textContent);
+    T.eq(labels, ["Yes", "No", "Other…"], "buttons");
+    T.assert(/Sends “yes”/.test(document.querySelector("#p-quick [data-q='0']").title), "tooltip shows what is sent");
+    document.querySelector("#p-quick [data-q='0']").click();
+    for (let i = 0; i < 30 && !$("p-quicknote").textContent; i++) await T.sleep(100);
+    // the fake session has no terminal, so the real path answers with its error: proves the click went to /api/session/say
+    T.assert(/Not sent: .*doesn't run in tmux/.test($("p-quicknote").textContent), $("p-quicknote").textContent);
+    document.querySelector("#p-quick .other").click(); await T.sleep(50);
+    T.assert(document.activeElement === $("p-input"), "Other… focuses the reply box");
+    select(T.node("Client").s.sessionId); await T.sleep(100);
+    T.eq(document.querySelectorAll("#p-quick button").length, 0, "no buttons for the blocked folder");
+    T.assert(/Quick replies are off/.test($("p-quick").textContent), "explains why");
+    $("p-input")?.blur(); select(null);
+    T.eq(T.sent.length, 0, "nothing went to Switchboard");
+    return "ok";
+  });
+
+  await check("quick replies: several open questions → a note and Answer…, no buttons that repeat the questions", A, () => {
+    const n = T.node("Compacted"), saved = n.s.ask;
+    n.s.ask = { kind: "question", options: [], note: "It asked 3 questions: answer them in the reply box." };
+    select(n.s.sessionId);
+    const box = $("p-quick"), r = { note: /asked 3 questions/.test(box.textContent), buttons: [...box.querySelectorAll("button")].map((b) => b.textContent) };
+    box.querySelector('[data-q="other"]').click();
+    r.replyOpen = !$("p-form").classList.contains("collapsed");
+    n.s.ask = saved; select(null);
+    T.eq(r, { note: true, buttons: ["Answer…"], replyOpen: true }, "note");
+    return "ok";
+  });
+
+  // ---- session sheet: terminal view, quick keys, standing chips. The test server's tmux wrapper answers for
+  // pk-claude-beta (test/browser.ts); nothing reaches a real tmux server. ----
+  await check("terminal view: Chat / Terminal toggle shows the pane as escaped coloured text, monospace, pinned to the bottom", A, async () => {
+    localStorage.removeItem("sb-view"); sheetView = "chat";
+    select(T.node("Beta").s.sessionId); await T.sleep(100);
+    T.eq(popup.view, "chat", "starts in Chat");
+    T.assert(getComputedStyle($("p-term")).display === "none" && getComputedStyle($("p-log")).display !== "none", "chat shown, terminal hidden");
+    document.querySelector('#p-view [data-view="term"]').click();
+    const term = $("p-term");
+    for (let i = 0; i < 40 && !/tick/.test(term.textContent); i++) await T.sleep(100);
+    T.assert(getComputedStyle(term).display !== "none" && getComputedStyle($("p-log")).display === "none", "terminal shown, chat hidden");
+    T.assert(term.textContent.includes(`<script>window.__pwned = 1<\/script> <img src=x onerror="window.__pwned=1"> &`), "markup shows as text");
+    T.assert(!term.querySelector("script, img") && !window.__pwned, "no elements made from pane content");
+    T.assert(!/\x1b|title|\[\?25l/.test(term.textContent), "other escape sequences dropped");
+    const span = (t) => [...term.querySelectorAll("span")].find((s) => s.textContent === t);
+    T.eq([span("✔ tests pass")?.style.color, span("✔ tests pass")?.style.fontWeight, span("red 256")?.style.color, span("true colour")?.style.color],
+      ["rgb(13, 188, 121)", "700", "rgb(255, 0, 0)", "rgb(10, 200, 30)"], "colours and bold");
+    T.assert(/Menlo|monospace/.test(getComputedStyle(term).fontFamily), "monospace");
+    T.assert(term.scrollWidth > term.clientWidth, "long lines scroll sideways");
+    T.assert(term.scrollHeight - term.scrollTop - term.clientHeight < 24, "pinned to the bottom");
+    term.scrollTop = 0; const tick = term.textContent.match(/tick \d+/)[0];
+    for (let i = 0; i < 30 && term.textContent.includes(tick); i++) await T.sleep(100);
+    T.assert(!term.textContent.includes(tick), "screen refreshed");
+    T.eq(term.scrollTop, 0, "scrolled up: the lines you're reading stay put");
+    setView("chat"); select(null);
+    return "ok";
+  });
+  await check("terminal view: polls about once a second only while it shows and the page is visible", A, async () => {
+    const real = window.fetch, calls = [];
+    window.fetch = (u, o) => { if (String(u).startsWith("/api/session/screen")) calls.push(Date.now()); return real(u, o); };
+    const since = (c) => calls.length - c;
+    try {
+      select(T.node("Beta").s.sessionId); await T.sleep(1500);
+      const r = { inChat: calls.length };
+      setView("term"); let c = calls.length; await T.sleep(3100); r.inTerm = since(c);
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); document.dispatchEvent(new Event("visibilitychange"));
+      c = calls.length; await T.sleep(2200); r.hidden = since(c);
+      c = calls.length; delete document.hidden; Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); document.dispatchEvent(new Event("visibilitychange"));
+      await T.sleep(400); r.resumed = since(c) >= 1;
+      setView("chat"); await T.sleep(100); c = calls.length; await T.sleep(1500); r.backToChat = since(c);
+      setView("term"); await T.sleep(100); select(null); c = calls.length; await T.sleep(1500); r.closed = since(c);
+      T.assert(r.inTerm >= 2 && r.inTerm <= 5, `about 1/s in Terminal: ${r.inTerm} in 3.1 s`);
+      T.eq([r.inChat, r.hidden, r.resumed, r.backToChat, r.closed], [0, 0, true, 0, 0], "polls only while shown and visible");
+      return r;
+    } finally { delete document.hidden; window.fetch = real; setView("chat"); select(null); }
+  });
+  await check("terminal view: refused for a blocked folder (server says 403, the page doesn't even ask); GET only", A, async () => {
+    const id = T.node("Client").s.sessionId;
+    const res = await fetch(`/api/session/screen?id=${encodeURIComponent(id)}`), d = await res.json();
+    const post = await fetch(`/api/session/screen?id=${encodeURIComponent(id)}`, { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: "{}" });
+    const real = window.fetch, calls = [];
+    window.fetch = (u, o) => { if (String(u).startsWith("/api/session/screen")) calls.push(u); return real(u, o); };
+    try {
+      select(id); setView("term"); await T.sleep(1300);
+      const r = { status: res.status, blocked: d.blocked, says: /off for this folder \(blocked\)/.test(d.error), post: post.status, asked: calls.length,
+        shown: /off for this folder/.test($("p-term").textContent), tools: $("p-tools").children.length };
+      T.eq(r, { status: 403, blocked: true, says: true, post: 404, asked: 0, shown: true, tools: 0 }, "blocked");
+      return "ok";
+    } finally { window.fetch = real; setView("chat"); select(null); }
+  });
+  await check("terminal text size: A− / A+ only in the Terminal view, change the font, remembered", A, async () => {
+    select(T.node("Beta").s.sessionId);
+    const tz = () => [...$("p-view").querySelectorAll(".tz")];
+    setView("chat");
+    const hiddenInChat = tz().every((b) => getComputedStyle(b).display === "none");
+    setView("term");
+    const shown = tz().every((b) => getComputedStyle(b).display !== "none");
+    const before = parseFloat(getComputedStyle($("p-term")).fontSize);
+    tz()[1].click(); tz()[1].click();
+    const bigger = parseFloat($("p-term").style.fontSize);
+    tz()[0].click();
+    const r = { hiddenInChat, shown, grew: bigger === before + 2, saved: localStorage.getItem("sb-termsize") === String(before + 1) };
+    try { localStorage.removeItem("sb-termsize"); } catch {}
+    termSize = 0; applyTermSize(); setView("chat"); select(null);
+    T.eq(r, { hiddenInChat: true, shown: true, grew: true, saved: true }, "zoom");
+    return "ok";
+  });
+  await check("quick keys: Stop, arrows, Enter, Space, Tab, Shift+Tab, Esc, 1–9 post the right keys; Ctrl+C needs a second tap", A, async () => {
+    const real = window.fetch, keys = [];
+    window.fetch = (u, o) => { if (String(u) === "/api/session/key") keys.push(JSON.parse(o.body)); return real(u, o); };
+    try {
+      select(T.node("Beta").s.sessionId);
+      for (let i = 0; i < 30 && !popup.canType; i++) await T.sleep(100);
+      const bar = () => $("p-tools").querySelector(".qkeys");
+      T.assert(bar() && !$("p-tools").classList.contains("readonly"), "keys bar, usable");
+      T.eq([...bar().querySelectorAll("button")].map((b) => b.textContent), ["■ Stop", "↑", "↓", "←", "→", "Enter", "Space", "Tab", "⇧Tab", "Esc", "Ctrl+C", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "buttons");
+      for (const b of [...bar().querySelectorAll("button")].filter((b) => b.dataset.key !== "ctrlc")) { b.click(); await T.sleep(60); }
+      for (let i = 0; i < 30 && !/Pressed 9/.test($("p-quicknote").textContent); i++) await T.sleep(100);
+      const ctrl = bar().querySelector('[data-key="ctrlc"]');
+      ctrl.click(); await T.sleep(300);
+      const r = { firstTap: keys.length, armed: ctrl.textContent };
+      ctrl.click(); for (let i = 0; i < 30 && keys.length < 20; i++) await T.sleep(100);
+      T.eq(keys.map((k) => k.key), ["esc", "up", "down", "left", "right", "enter", "space", "tab", "stab", "esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "ctrlc"], "keys posted in order");
+      T.assert(keys.every((k) => k.sessionId === T.node("Beta").s.sessionId), "to Beta");
+      T.eq([r.firstTap, r.armed, ctrl.textContent], [19, "Tap again: Ctrl+C", "Ctrl+C"], "Ctrl+C confirm");
+      for (let i = 0; i < 30 && !/Ctrl\+C/.test($("p-quicknote").textContent); i++) await T.sleep(100);
+      T.assert(/Pressed Ctrl\+C/.test($("p-quicknote").textContent) && !$("p-quicknote").classList.contains("bad"), $("p-quicknote").textContent);
+      return "ok";
+    } finally { window.fetch = real; select(null); }
+  });
+  await check("terminal view: refreshes every ~400 ms while a picker or dialog is on screen, back to 1 s after; still only while visible", A, async () => {
+    const real = window.fetch, calls = [];
+    // A real picker capture (names swapped), in colour like capture-pane -e sends it.
+    const PICKER = "⏺ Asking.\n\x1b[38;2;153;153;153m" + "─".repeat(40) + "\x1b[39m\n←  \x1b[48;2;177;185;249m ☐ Colour \x1b[49m  ☐ Extras  ✔ Submit  →\n\nWhich colour should Sam use?\n\n" +
+      "\x1b[38;2;177;185;249m❯\x1b[39m 1. Red\n  2. Green\n  3. Type something.\n\nEnter to select · Tab/Arrow keys to navigate · Esc to cancel";
+    let screen = PICKER;
+    window.fetch = (u, o) => { if (String(u).startsWith("/api/session/screen")) { calls.push(Date.now()); return Promise.resolve(new Response(JSON.stringify({ screen }), { status: 200 })); } return real(u, o); };
+    const since = (c) => calls.length - c;
+    try {
+      select(T.node("Beta").s.sessionId); setView("term");
+      await T.sleep(300); let c = calls.length; await T.sleep(2100);
+      const r = { picker: since(c), fast: termFast, shown: /Which colour should Sam use\?/.test($("p-term").textContent) };
+      screen = " Bash command\n   npm test\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n"; await T.sleep(500);
+      c = calls.length; await T.sleep(2100); r.dialog = since(c);
+      screen = "plain output\nline 2"; await T.sleep(500);
+      c = calls.length; await T.sleep(2100); r.plain = since(c); r.slowAgain = !termFast;
+      screen = PICKER; await T.sleep(1100);
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); document.dispatchEvent(new Event("visibilitychange"));
+      c = calls.length; await T.sleep(1200); r.hidden = since(c);
+      T.assert(r.picker >= 4 && r.picker <= 7 && r.dialog >= 4 && r.dialog <= 7, `fast with a picker/dialog: ${r.picker}, ${r.dialog} in 2.1 s`);
+      T.assert(r.plain >= 1 && r.plain <= 3, `1 s otherwise: ${r.plain} in 2.1 s`);
+      T.eq([r.fast, r.shown, r.slowAgain, r.hidden], [true, true, true, 0], "fast refresh");
+      return r;
+    } finally { delete document.hidden; window.fetch = real; setView("chat"); select(null); }
+  });
+  await check("terminal view: the Type text box (Terminal view only) types literal text + Enter through the reply path; keys row wraps", A, async () => {
+    const real = window.fetch, says = [];
+    window.fetch = (u, o) => { if (String(u) === "/api/session/say") { says.push(JSON.parse(o.body)); return Promise.resolve(new Response('{"ok":true}', { status: 200 })); } return real(u, o); };
+    try {
+      const id = T.node("Beta").s.sessionId; select(id);
+      for (let i = 0; i < 30 && !popup.canType; i++) await T.sleep(100);
+      setView("chat"); const inChat = getComputedStyle($("p-ttype")).display;
+      setView("term"); const inTerm = getComputedStyle($("p-ttype")).display;
+      $("p-ttext").value = "Medium please, -not a flag"; $("p-ttype").querySelector("button").click();
+      for (let i = 0; i < 30 && !says.length; i++) await T.sleep(50);
+      await T.sleep(50);
+      const bar = $("p-tools").querySelector(".qkeys");
+      const r = { inChat, inTerm: inTerm !== "none", sent: says.map((b) => [b.sessionId === id, b.text, b.quick, /^tt/.test(b.id)]), cleared: $("p-ttext").value,
+        note: $("p-quicknote").textContent, wraps: getComputedStyle(bar).flexWrap, noSideways: bar.scrollWidth <= bar.clientWidth, noPending: !popup.pending.length };
+      $("p-ttext").value = "  "; $("p-ttype").querySelector("button").click(); await T.sleep(100); r.emptyIgnored = says.length;
+      T.eq(r, { inChat: "none", inTerm: true, sent: [[true, "Medium please, -not a flag", true, true]], cleared: "", note: "Typed: Medium please, -not a flag",
+        wraps: "wrap", noSideways: true, noPending: true, emptyIgnored: 1 }, "type box");
+      return "ok";
+    } finally { window.fetch = real; setView("chat"); select(null); }
+  });
+  await check("standing chips: shown in every sheet, tap types it through the reply path (never by itself), editable and remembered; none for blocked", A, async () => {
+    localStorage.removeItem("sb-chips"); chips = loadChips(); chipEdit = false;
+    const real = window.fetch, says = [], id = T.node("Beta").s.sessionId;
+    window.fetch = (u, o) => { if (String(u) === "/api/session/say") says.push(JSON.parse(o.body)); return real(u, o); };
+    const labels = () => [...$("p-tools").querySelectorAll(".qchip")].map((b) => b.textContent);
+    const realPrompt = window.prompt;
+    try {
+      select(id); for (let i = 0; i < 30 && !popup.canType; i++) await T.sleep(100);
+      const r = { defaults: labels() };
+      await T.sleep(500); r.sentByItself = says.length;
+      $("p-tools").querySelector('.qchip[data-chip="0"]').click();
+      for (let i = 0; i < 40 && !/Typed/.test($("p-quicknote").textContent); i++) await T.sleep(100);
+      r.sent = says.map((b) => [b.text, b.sessionId === id, /^m/.test(b.id)]);
+      r.pendingLine = [...$("p-log").querySelectorAll(".msg.you")].some((m) => /continue/.test(m.textContent));
+      window.prompt = () => "deploy to staging";
+      $("p-tools").querySelector("[data-chipedit]").click();
+      $("p-tools").querySelector("[data-chipadd]").click();
+      $("p-tools").querySelector('.qchip[data-chip="0"]').click(); // in edit mode: removes "continue"
+      $("p-tools").querySelector("[data-chipedit]").click();
+      r.edited = labels(); r.sentWhileEditing = says.length;
+      chips = []; chips = loadChips(); r.remembered = chips;
+      select(T.node("Client").s.sessionId); r.blocked = $("p-tools").querySelectorAll("button").length;
+      T.eq(r, { defaults: ["continue", "yes, go ahead", "commit and push", "run the tests"], sentByItself: 0, sent: [["continue", true, true]], pendingLine: true,
+        edited: ["yes, go ahead", "commit and push", "run the tests", "deploy to staging"], sentWhileEditing: 1,
+        remembered: ["yes, go ahead", "commit and push", "run the tests", "deploy to staging"], blocked: 0 }, "chips");
+      return "ok";
+    } finally {
+      window.fetch = real; window.prompt = realPrompt; select(null);
+      localStorage.removeItem("sb-chips"); chips = loadChips(); sessionPending.delete(id); saveOutbox();
+    }
+  });
+  await check("popup: tool calls fold into one line; Bash rows show the real command; question cards; Details closed and remembered; short name", A, async () => {
+    localStorage.removeItem("sb-details"); detailsOpen = false;
+    const n = T.node("repo-abc-12-93"); select(n.s.sessionId);
+    for (let i = 0; i < 40 && !$("p-log").querySelector(".askcard"); i++) await T.sleep(100);
+    const groups = [...$("p-log").querySelectorAll(".tgroup")];
+    const r = {
+      title: $("p-name").textContent, titleTip: $("p-name").title, details: $("p-details").open,
+      groups: groups.map((g) => g.querySelector(".tgs").textContent), collapsed: groups.every((g) => !g.querySelector("details").open),
+      rows: [...groups[0].querySelectorAll(".msg.tool .tl")].map((x) => x.textContent),
+      cards: [...$("p-log").querySelectorAll(".askcard")].map((c) => [c.classList.contains("done"), c.querySelector(".aqq").textContent.replace(/^\w+(?=[A-Z])/, ""), c.querySelector(".aqa")?.textContent ?? null]),
+      noAskRow: ![...$("p-log").querySelectorAll(".msg.tool .tl")].some((x) => /AskUserQuestion/.test(x.textContent)),
+      quick: [...$("p-quick").querySelectorAll("button")].map((b) => b.textContent), asks: $("p-quick").querySelector(".qlabel")?.textContent,
+      askMark: n.askG.style.display !== "none",
+    };
+    groups[0].querySelector("summary").click(); r.opens = groups[0].querySelector("details").open;
+    const rowH = groups[0].querySelector(".msg.tool").getBoundingClientRect().height; r.compactRows = rowH > 10 && rowH <= 28;
+    $("p-details").open = true; $("p-details").dispatchEvent(new Event("toggle")); select(null); select(n.s.sessionId); r.remembered = $("p-details").open;
+    $("p-details").open = false; $("p-details").dispatchEvent(new Event("toggle")); select(null);
+    T.eq(r, {
+      title: "ABC-12", titleTip: "repo-abc-12-93", details: false,
+      groups: ["4 tool calls: Bash ×3, get_issue", "🔧 $ git checkout main"], collapsed: true,
+      rows: ["$ git log --oneline -5", "Run the unit tests", "$ cat src/a.ts", "get_issue"],
+      cards: [[true, "Which branch?", "Answer: main"], [false, "Ship it now?", null]], noAskRow: true,
+      quick: ["1. Yes, ship", "2. Wait for review", "Other…"], asks: "It asks: Ship it now?", askMark: true,
+      opens: true, compactRows: true, remembered: true,
+    }, "popup");
+    return `row ${Math.round(rowH)}px`;
+  });
+  await check("question form: the open card is a form; Submit answers through the real picker (scripted); a second try is refused", A, async () => {
+    const n = T.node("repo-abc-12-93"); select(n.s.sessionId);
+    const form = () => $("p-log").querySelector(".aform");
+    for (let i = 0; i < 40 && !form(); i++) await T.sleep(100);
+    const note = () => form().querySelector(".anote");
+    const r = { forms: $("p-log").querySelectorAll(".aform").length, doneHasForm: !!$("p-log").querySelector(".askcard.done .aform"),
+      inputs: [...form().querySelectorAll('input:not([type="text"])')].map((x) => `${x.type}:${x.value}`),
+      labels: [...form().querySelectorAll(".aopt b")].map((b) => b.textContent), needsYou: n.s.state, mark: n.askG.style.display !== "none" };
+    form().querySelector(".asubmit").click(); await T.sleep(50);
+    r.empty = note().textContent;
+    form().querySelector('input[value="1"]').click(); form().querySelector(".asubmit").click();
+    for (let i = 0; i < 80 && !/Answered|Couldn't/.test(note().textContent); i++) await T.sleep(100);
+    r.answered = [note().textContent, form().classList.contains("sent")];
+    // The transcript still has it open, but the picker closed: the server refuses and nothing is pressed (browser.ts checks).
+    select(null); select(n.s.sessionId);
+    for (let i = 0; i < 40 && !form(); i++) await T.sleep(100);
+    form().querySelector('input[value="0"]').click(); form().querySelector(".asubmit").click();
+    for (let i = 0; i < 80 && !/Answered|Couldn't/.test(note().textContent); i++) await T.sleep(100);
+    r.refused = [note().textContent, note().classList.contains("bad"), form().querySelector(".asubmit").disabled];
+    note().querySelector("[data-openterm]").click();
+    r.toTerm = popup.view;
+    setView("chat"); select(null);
+    T.eq(r, { forms: 1, doneHasForm: false, inputs: ["radio:0", "radio:1", "radio:other"], labels: ["Yes, ship", "Wait for review", "Other:"], needsYou: "needs-you", mark: true,
+      empty: "Answer “Ship” first.", answered: ["Answered ✓", true], refused: ["Couldn't answer automatically, use the Terminal tab" + "Open the Terminal tab", true, false], toTerm: "term" }, "form");
+    return "ok";
+  });
+  await check("question form: several questions, multiSelect and Other with text post one answer each; errors shown; answered → card without form; none when blocked", A, async () => {
+    const real = window.fetch, posts = [];
+    let reply = { status: 409, body: { error: "Couldn't answer automatically, use the Terminal tab" } };
+    window.fetch = (u, o) => { if (String(u) === "/api/session/answer") { posts.push(JSON.parse(o.body)); return Promise.resolve(new Response(JSON.stringify(reply.body), { status: reply.status })); } return real(u, o); };
+    const card = { id: "t-ask-1", role: "ask", at: Date.now(), text: "x", questions: [
+      { question: "Which colour should Sam use?", header: "Colour", options: [{ label: "Red", description: "<img src=x onerror=\"window.__pwned=1\">warm" }, { label: "Green" }] },
+      { question: "Extras for Mirza?", header: "Extras", multiSelect: true, options: [{ label: "Cheese" }, { label: "Olives" }, { label: "Basil" }] }] };
+    try {
+      const id = T.node("Compacted").s.sessionId; select(id);
+      for (let i = 0; i < 30 && !popup.log.items.size; i++) await T.sleep(100);
+      popup.log.sync([...popup.chat, card]);
+      const form = $("p-log").querySelector('.aform[data-ask="t-ask-1"]'), note = form.querySelector(".anote");
+      const r = { types: [...form.querySelectorAll("fieldset")].map((f) => [...f.querySelectorAll('input:not([type="text"])')].map((x) => x.type[0]).join("")),
+        escaped: !form.querySelector("img") && !window.__pwned && /<img/.test(form.textContent), multiTag: form.querySelectorAll(".amulti").length };
+      form.querySelector('[data-qi="0"] input[value="1"]').click();
+      form.querySelector('[data-qi="1"] input[value="2"]').click(); form.querySelector('[data-qi="1"] input[value="0"]').click();
+      const other = form.querySelector('[data-qi="1"] .aothertext');
+      form.querySelector('[data-qi="1"] input[value="other"]').click(); form.querySelector(".asubmit").click(); await T.sleep(50);
+      r.emptyOther = [note.textContent, posts.length];
+      other.value = "Ham, -extra"; other.dispatchEvent(new Event("input", { bubbles: true }));
+      form.querySelector(".asubmit").click();
+      for (let i = 0; i < 30 && !note.classList.contains("bad"); i++) await T.sleep(50);
+      r.refused = [note.textContent.startsWith("Couldn't answer automatically, use the Terminal tab"), !!note.querySelector("[data-openterm]")];
+      reply = { status: 200, body: { ok: true } };
+      form.querySelector(".asubmit").click();
+      for (let i = 0; i < 30 && !/Answered/.test(note.textContent); i++) await T.sleep(50);
+      r.ok = note.textContent;
+      r.posts = posts.map((p) => [p.sessionId === id, p.questions, p.answers]);
+      popup.log.sync([...popup.chat, { ...card, answers: { "Which colour should Sam use?": "Green", "Extras for Mirza?": "Cheese, Basil, Ham, -extra" } }]);
+      const done = popup.log.els.get("t-ask-1");
+      r.answeredCard = [done.classList.contains("done"), !done.querySelector(".aform"), done.querySelector(".aqa")?.textContent];
+      popup.log.drop("t-ask-1");
+      select(T.node("Client").s.sessionId);
+      for (let i = 0; i < 30 && !popup.log.items.size; i++) await T.sleep(100);
+      popup.log.sync([...popup.chat, { ...card, id: "t-ask-2" }]);
+      r.blocked = [!!popup.log.els.get("t-ask-2"), !!popup.log.els.get("t-ask-2")?.querySelector(".aform")];
+      T.eq(r, { types: ["rrr", "cccc"], escaped: true, multiTag: 1, emptyOther: ["Type your own answer for “Extras”, or pick an option.", 0], refused: [true, true], ok: "Answered ✓",
+        posts: [[true, ["Which colour should Sam use?", "Extras for Mirza?"], [{ picks: [1] }, { picks: [0, 2], other: "Ham, -extra" }]],
+          [true, ["Which colour should Sam use?", "Extras for Mirza?"], [{ picks: [1] }, { picks: [0, 2], other: "Ham, -extra" }]]],
+        answeredCard: [true, true, "Answer: Green"], blocked: [true, false] }, "form");
+      return "ok";
+    } finally { window.fetch = real; popup.log?.drop("t-ask-2"); select(null); }
+  });
+  await check("shell (!) and /commands: confirmed by their transcript line; never recorded → 'sent as a command', not pale forever", A, async () => {
+    const n = T.node("repo-abc-12-93"); select(n.s.sessionId);
+    for (let i = 0; i < 40 && !$("p-log").querySelector(".msg.shell"); i++) await T.sleep(100);
+    const shells = [...$("p-log").querySelectorAll(".msg.shell")].map((x) => x.querySelector(".cmd").textContent);
+    const at = Date.now() - 60_000;
+    const shellAt = popup.chat.find((c) => c.role === "shell").at;
+    const bang = { text: "! ls src", at: shellAt - 1000, status: "queued", typedAt: shellAt - 1000 }, clear = { text: "/clear", at, status: "queued", typedAt: at };
+    const chat = popup.chat;
+    const list = [bang, clear];
+    settlePending(list, chat, false);
+    const r = { shells, bangSettled: !list.includes(bang), clear: clear.status };
+    popup.pending.push(clear); renderPopupChat(popup.chat);
+    r.label = popup.log.els.get(`pending-${clear.at}`)?.textContent.includes("Sent as a command");
+    r.noRetry = !popup.log.els.get(`pending-${clear.at}`)?.querySelector(".retry");
+    clear.status = "queued"; settlePending([clear], [], true); r.busyStillQueued = clear.status;
+    popup.pending.length = 0; select(null);
+    T.eq(r, { shells: ["! ls src", "/rename Ticket work"], bangSettled: true, clear: "untracked", label: true, noRetry: true, busyStillQueued: "queued" }, "commands");
+    return "ok";
+  });
+  await check("running agents: 🤖 badge on the circle with a tooltip list, a line in the popup, a badge in the phone list", A, async () => {
+    const id = T.node("Compacted").s.sessionId;
+    const withAgents = state.sessions.map((s) => s.sessionId === id ? { ...s, agents: [
+      { id: "a1", description: "Search the logs", since: Date.now() - 120_000, background: true },
+      { id: "a2", description: "Build the view", since: Date.now() - 60_000, background: false }] } : s);
+    updateSessions(withAgents);
+    const n = T.node("Compacted"), g = n.agentG;
+    const r = { shown: g.style.display !== "none", label: g.querySelector("text").textContent, tip: g.querySelector("title").textContent,
+      othersHidden: [...nodes.values()].filter((x) => x !== n).every((x) => x.agentG.style.display === "none") };
+    select(id);
+    r.line = $("p-agents").querySelector("summary").textContent; r.items = [...$("p-agents").querySelectorAll("li")].map((li) => li.firstChild.textContent.trim());
+    r.listBadge = !!document.querySelector(`#rows .srow-s[data-id="${id}"] .ag`);
+    select(null); updateSessions(state.sessions);
+    r.goneAfter = n.agentG.style.display === "none";
+    T.eq(r, { shown: true, label: "🤖 2", tip: "🤖 2 agents running:\n• Search the logs (2m, background)\n• Build the view (1m)", othersHidden: true,
+      line: "🤖 2 agents running", items: ["Search the logs", "Build the view"], listBadge: true, goneAfter: true }, "agents");
+    return "ok";
+  });
+  await check("not delivered: the error names the session and why; no Retry when it has ended", A, async () => {
+    const n = T.node("Compacted"); select(n.s.sessionId);
+    const gone = { text: "both 1", at: Date.now(), status: "sending", ...toSession(n.s.sessionId, "ABC-12"),
+      send: async () => { throw Object.assign(new Error("That session isn't running any more"), { gone: true }); } };
+    popup.pending.push(gone); await deliver(gone);
+    const other = { text: "hi", at: Date.now() + 1, status: "sending", ...toSession(n.s.sessionId, "ABC-12"), send: async () => { throw new Error("Pocket refused it (bad session)"); } };
+    popup.pending.push(other); await deliver(other);
+    const line = (p) => popup.log.els.get(`pending-${p.at}`);
+    const r = {
+      goneText: line(gone).textContent.includes("ABC-12 isn't running any more. Retry won't help"), goneRetry: !!line(gone).querySelector(".retry:not(.discard)"),
+      goneDiscard: !!line(gone).querySelector(".discard"), otherText: line(other).textContent.includes("ABC-12: Pocket refused it (bad session)"),
+      otherRetry: !!line(other).querySelector(".retry:not(.discard)"), notSaved: !(localStorage.getItem("sb-outbox") || "").includes("both 1"),
+    };
+    popup.pending.length = 0; select(null); localStorage.removeItem("sb-outbox");
+    T.eq(r, { goneText: true, goneRetry: false, goneDiscard: true, otherText: true, otherRetry: true, notSaved: true }, "errors");
+    return "ok";
+  });
+  await check("mark as waiting on me: your flag gives the ? and Yes / No, is remembered, clears when it next replies", A, async () => {
+    const n = T.node("Compacted");
+    select(n.s.sessionId); await T.sleep(100);
+    const mark = document.querySelector("#p-quick [data-mark]");
+    T.assert(mark && mark.textContent === "Mark as waiting on me", "toggle offered when nothing was detected");
+    mark.click(); await T.sleep(50);
+    T.assert(n.askG.style.display !== "none", "? on the bubble");
+    T.eq([...document.querySelectorAll("#p-quick button")].map((b) => b.textContent), ["Yes", "No", "Other…", "✓ Waiting on me"], "buttons");
+    T.assert(JSON.parse(localStorage.getItem("sb-markwait"))[n.s.sessionId] !== undefined, "remembered");
+    const real = n.s.lastReplyAt;
+    n.s.lastReplyAt = real + 1000; renderQuick(n.s);
+    T.assert(!askOf(n.s) && !(n.s.sessionId in JSON.parse(localStorage.getItem("sb-markwait"))), "cleared by its next reply");
+    n.s.lastReplyAt = real;
+    document.querySelector("#p-quick [data-mark]").click(); document.querySelector("#p-quick [data-mark]").click(); await T.sleep(50);
+    T.assert(!askOf(n.s), "click again clears it");
+    T.eq(document.querySelector("#p-quick [data-mark]").textContent, "Mark as waiting on me", "back to offer");
+    n.askG.style.display = "none"; select(null);
+    return "ok";
+  });
+
+  await check("markdown: headings, lists (nested), tables, code with Copy, quotes, links", A, () => {
+    const box = document.createElement("div");
+    box.innerHTML = md("## Plan\n**Bold** and *italic* and `code`\n\n- one\n  - nested\n- two\n\n1. first\n2. second\n\n| A | B |\n|---|---|\n| x | [ABC-12](https://example.com/i/12) |\n\n```js\nconst a = 1 < 2;\n```\n> quoted\n\nSee https://example.com/pr/2266.");
+    T.eq(box.querySelector("h4")?.textContent, "Plan", "heading");
+    T.eq(box.querySelector("strong")?.textContent, "Bold", "bold"); T.eq(box.querySelector("em")?.textContent, "italic", "italic");
+    T.assert(box.querySelector("ul > li > ul > li")?.textContent === "nested", "nested list");
+    T.eq([...box.querySelectorAll("ol > li")].map((l) => l.textContent), ["first", "second"], "numbered list");
+    T.eq([...box.querySelectorAll("table th")].map((t) => t.textContent), ["A", "B"], "table head");
+    const link = box.querySelector("td a");
+    T.assert(link?.textContent === "ABC-12" && link.target === "_blank" && link.rel.includes("noopener"), "ticket link opens in a new tab");
+    T.eq(box.querySelector(".code code")?.textContent, "const a = 1 < 2;", "code block keeps text");
+    T.assert(box.querySelector(".code .copy"), "copy button");
+    T.eq(box.querySelector("blockquote")?.textContent, "quoted", "quote");
+    T.eq([...box.querySelectorAll("p a")].at(-1)?.getAttribute("href"), "https://example.com/pr/2266", "bare URL linked, trailing dot left out");
+    return "ok";
+  });
+
+  await check("markdown is safe: no HTML or script from message content", A, () => {
+    const box = document.createElement("div");
+    box.innerHTML = md('<img src=x onerror="window.pwned=1"> <script>window.pwned=1<\/script>\n[click](javascript:alert(1)) [x](https://a.b/" onmouseover="window.pwned=1)\n| <b>t</b> | h |\n|--|--|\n| `<i>c</i>` | **<u>u</u>** |\n```\n</code><script>window.pwned=1<\/script>\n```');
+    T.assert(!box.querySelector("script, img, b, i, u, [onerror], [onmouseover]"), "no injected elements: " + box.innerHTML);
+    T.assert(![...box.querySelectorAll("a")].some((a) => !/^https?:/.test(a.getAttribute("href"))), "only http(s) links");
+    T.assert(box.textContent.includes("<script>"), "shown as text");
+    return "ok";
+  });
+
+  await check("session identity: lines about a session get its colour + chip; chip opens its popup; Switchboard keeps its own", A, async () => {
+    const rows = [...$("log").querySelectorAll(".msg")];
+    const toBeta = rows.find((r) => r.matches(".switchboard.tinted") && r.textContent.includes("tests pass, nothing else"));
+    T.assert(toBeta, "→ Beta reply is tinted");
+    const chip = toBeta.querySelector(".mhead .chip");
+    T.eq(chip?.textContent, "🧪 Beta", "chip shows Beta's own icon + name");
+    T.eq(toBeta.style.getPropertyValue("--tint"), T.node("Beta").s.color, "tint = bubble colour");
+    const notice = rows.find((r) => r.matches(".notice.tinted") && r.textContent.includes("Tests pass on beta"));
+    T.assert(notice && notice.querySelector("strong")?.textContent === "beta", "notice from Beta, tinted, markdown");
+    T.assert(toBeta.classList.contains("cont"), "same-session lines grouped under one chip");
+    const plain = rows.find((r) => r.matches(".switchboard:not(.tinted)") && r.textContent.includes("answer 3"));
+    T.eq(plain?.querySelector(".chip")?.textContent ?? (plain?.classList.contains("cont") ? "⚡ Switchboard" : ""), "⚡ Switchboard", "plain replies keep Switchboard");
+    T.assert(!rows.some((r) => r.matches(".you") && r.querySelector(".chip")), "your own messages have no chip");
+    select(null); setSticky(false);
+    chip.click(); await T.sleep(300);
+    T.eq(selected, T.node("Beta").s.sessionId, "chip opened Beta's popup");
+    T.assert(!$("p-log").querySelector(".chip"), "no chips inside a session's own popup");
+    select(null); setSticky(false);
+    return "ok";
+  });
+
+  await check("tool activity: one-line rows, quieter, expandable; toggle hides them; density toggle", A, async () => {
+    const tools = [...$("log").querySelectorAll(".msg.tool")];
+    T.assert(tools.length >= 3, "tool rows: " + tools.length);
+    const zomb = tools.find((t) => t.textContent.includes("Message to") && t.querySelector(".chip")?.textContent.includes("Zomb"));
+    T.assert(zomb, "sb send row with Zomb's chip");
+    T.assert(zomb.querySelector("details") && !zomb.querySelector("details").open, "collapsed");
+    zomb.querySelector("summary").click();
+    T.assert(zomb.querySelector("details").open && zomb.querySelector("pre").textContent === "check the inventory", "expands to details");
+    const fs = (q) => parseFloat(getComputedStyle(q).fontSize);
+    T.assert(fs(zomb) < fs($("log").querySelector(".msg.switchboard")), "quieter than replies");
+    $("toolsbtn").click(); T.eq(getComputedStyle(zomb).display, "none", "hidden when off"); $("toolsbtn").click();
+    T.assert(getComputedStyle(zomb).display !== "none", "shown again");
+    $("densebtn").click(); T.assert(document.body.classList.contains("dense") && $("densebtn").textContent === "Compact", "compact"); $("densebtn").click();
+    return "ok";
+  });
+
+  await check("voice commands: whole utterances only", A, () => {
+    const yes = { "Turn off hands-free.": "hands-free off", "turn on send when done": "send when done on", "Turn off the mic!": "mic off", "Clear that.": "clear", "Hey Switchboard, turn off the mic": "mic off" };
+    for (const [said, action] of Object.entries(yes)) T.eq(matchCommand(said), action, said);
+    for (const said of ["please turn off the mic later", "turn off the mic and send it", "send it"]) T.eq(matchCommand(said) ?? null, null, said);
+    return Object.keys(yes).length + " matched, 3 rejected";
+  });
+
+  await check("hands-free: 'send it' splits two messages, keyword removed (synthetic speech, real Whisper)", A, async () => {
+    T.sent.length = 0; input.value = ""; autoSend = true; gate = { on: false, baseline: null, sens: 10 };
+    await T.feed(await T.audio("hf.b64"));
+    T.eq(T.sent.length, 2, "messages sent");
+    T.assert(/flaky/i.test(T.sent[0]) && /logs/i.test(T.sent[1]), "content: " + JSON.stringify(T.sent));
+    T.assert(!T.sent.some((m) => /send it/i.test(m)), "keyword must be removed");
+    T.eq(input.value, "", "box empty afterwards");
+    return T.sent;
+  });
+
+  await check("noise gate: calibrated, background 12 dB quieter is ignored; spoken command runs, not sent", A, async () => {
+    const audio = await T.audio("gate.b64");
+    T.sent.length = 0; input.value = ""; autoSend = true; gate = { on: false, baseline: null, sens: 8 };
+    await T.feed(audio, { calibrate: true });
+    const gated = [...T.sent], autoAfter = autoSend, base = gate.baseline;
+    T.assert(base != null, "calibration set a baseline");
+    T.assert(gated.length === 1 && /PS Tokens/i.test(gated[0]) && !/news|weather/i.test(gated[0]), "with gate: " + JSON.stringify(gated));
+    T.eq(autoAfter, false, "'turn off send when done' ran as a command");
+    // Control: same audio, no gate → the background speech gets through (proves the gate is what removed it).
+    T.sent.length = 0; input.value = ""; autoSend = true; gate = { on: false, baseline: null, sens: 8 };
+    await T.feed(audio);
+    T.assert(T.sent.some((m) => /news|weather/i.test(m)), "without gate background should be heard: " + JSON.stringify(T.sent));
+    autoSend = true; gate = { on: false, baseline: null, sens: 10 }; saveGate(); showGate();
+    return { baselineDb: Math.round(base), gated };
+  });
+
+  await check("idle timeout: no speech for 5 min turns hands-free off; quiet background doesn't count; speech resets; mic button resumes", A, async () => {
+    const minutes = (m) => Math.round((m * 60_000) / 64);
+    const quiet = (n) => { const b = new Float32Array(1024); for (let i = 0; i < 1024; i++) b[i] = 0.004 * Math.sin(i / 3); return Array.from({ length: n }, () => b); }; // ≈ -51 dB hum
+    const loud = () => { const b = new Float32Array(1024); for (let i = 0; i < 1024; i++) b[i] = 0.3 * Math.sin(i / 2); return b; };
+    const run = (blocks) => { for (const b of blocks) { if (!hf) break; hfBlock(b); fake += 64; } };
+    let fake = 2e12; const realNow = Date.now; Date.now = () => fake;
+    const realStart = startHandsFree; let restarted = 0; startHandsFree = async () => { restarted++; };
+    const r = {};
+    try {
+      idleMin = 5; gate = { on: true, baseline: -18, sens: 10 }; T.sent.length = 0;
+      const fresh = () => ({ ctx: { sampleRate: 16000, close() {} }, node: { disconnect() {} }, stream: { getTracks: () => [] }, pre: [], seg: [], inSpeech: false, speechRun: 0, silent: 0, segMs: 0, speechMs: 0, noise: 0.01, pending: 0, queue: Promise.resolve() });
+      // 1) only background hum below the gate for 6 minutes → off
+      hf = fresh(); HF.blockMs = 64; run(quiet(minutes(6)));
+      r.offAfterHum = !hf; r.text = $("hftext").textContent; r.timedOut = hfTimedOut;
+      // 2) mic button after a timeout → back to hands-free (not a one-off recording)
+      mainComposer.toggle(); r.micResumes = restarted === 1;
+      // 3) speech at minute 4 resets the clock: still on at minute 8, off by minute 10
+      hfTimedOut = false; hf = fresh(); run(quiet(minutes(4))); run([loud(), loud(), loud(), loud()]); hf.inSpeech = false; hf.seg = [];
+      run(quiet(minutes(4))); r.onAfterSpeech = !!hf; run(quiet(minutes(2))); r.offLater = !hf;
+      // 4) off setting: never times out
+      idleMin = 0; hfTimedOut = false; hf = fresh(); run(quiet(minutes(20))); r.neverWhenOff = !!hf; hf = null;
+    } finally {
+      Date.now = realNow; startHandsFree = realStart; idleMin = 5; hfTimedOut = false; gate = { on: false, baseline: null, sens: 10 }; saveGate(); $("hfbar").className = "";
+    }
+    T.eq({ offAfterHum: r.offAfterHum, timedOut: r.timedOut, micResumes: r.micResumes, onAfterSpeech: r.onAfterSpeech, offLater: r.offLater, neverWhenOff: r.neverWhenOff },
+      { offAfterHum: true, timedOut: true, micResumes: true, onAfterSpeech: true, offLater: true, neverWhenOff: true }, "idle states");
+    T.assert(/no speech for 5 min/.test(r.text), r.text);
+    return r.text;
+  });
+
+  await check("scroll: reading position never moves; at the bottom it follows; pill when new below", A, async () => {
+    const log = $("log");
+    const anchor = () => { const r = log.getBoundingClientRect(); const el = [...log.children].find((c) => c.getBoundingClientRect().bottom > r.top + 5); return { el, y: el.getBoundingClientRect().top }; };
+    log.scrollTop = 300; log.dispatchEvent(new Event("scroll")); await T.sleep(100);
+    const a = anchor();
+    hfStatus("hearing", "Hearing you…"); $("micnote").textContent = "Transcribing…"; await T.sleep(50);
+    input.value = "word ".repeat(400); autosize(); await T.sleep(100);
+    hfStatus("sent", "Sent: a long one. Listening again."); $("micnote").textContent = ""; await T.sleep(50);
+    const moved = Math.round(a.el.getBoundingClientRect().top - a.y);
+    mainLog.sync([...state.dispatcher.chat, { id: "t-new-1", role: "switchboard", text: "new while reading", at: Date.now() }]);
+    await T.sleep(50);
+    const pill = !$("newpill").hidden, movedAfterNew = Math.round(a.el.getBoundingClientRect().top - a.y);
+    $("newpill").click(); await T.sleep(50);
+    mainLog.sync([...state.dispatcher.chat, { id: "t-new-1", role: "switchboard", text: "x", at: 1 }, { id: "t-new-2", role: "switchboard", text: "new at bottom", at: Date.now() }]);
+    await T.sleep(50);
+    const gap = Math.round(log.scrollHeight - log.scrollTop - log.clientHeight);
+    input.value = ""; autosize(); $("hfbar").className = "";
+    T.eq(moved, 0, "px moved while transcribing"); T.eq(movedAfterNew, 0, "px moved by new message"); T.assert(pill, "pill shown"); T.assert(gap <= 2, "follows at bottom, gap " + gap);
+    return "ok";
+  });
+
+  await check("popups: hover opens, into popup stays, leave closes, click sticks, outside click / Esc close", A, async () => {
+    const name = () => (selected ? nodes.get(selected)?.s.name : null), wait = () => T.sleep(HOVER.closeMs + 150);
+    const p = T.node("Compacted"), q = T.node("Waiting"); select(null);
+    const r = {};
+    hoverNode(p, true); await T.sleep(HOVER.openMs + 80); r.hover = name();
+    hoverNode(p, false); await wait(); r.leave = name();
+    hoverNode(p, true); await T.sleep(HOVER.openMs + 80); hoverNode(p, false); panel.dispatchEvent(new PointerEvent("pointerenter")); await wait(); r.intoPopup = name();
+    panel.dispatchEvent(new PointerEvent("pointerleave")); await wait(); r.leavePopup = name();
+    clickNode(p); hoverNode(p, false); await wait(); r.clicked = name();
+    hoverNode(q, true); await T.sleep(HOVER.openMs + 80); hoverNode(q, false); r.hoverOtherWhileStuck = name();
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.outside = name();
+    hoverNode(p, true); await T.sleep(HOVER.openMs + 80); panel.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); hoverNode(p, false); await wait(); r.clickInside = name();
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); r.esc = name();
+    T.eq(r, { hover: "Compacted", leave: null, intoPopup: "Compacted", leavePopup: null, clicked: "Compacted", hoverOtherWhileStuck: "Compacted", outside: null, clickInside: "Compacted", esc: null }, "popup states");
+    return "ok";
+  });
+
+  await check("settings pane: hover opens, leave closes, click inside sticks, outside click closes", A, async () => {
+    const st = $("settings"), open = () => st.classList.contains("open");
+    setSettingsSticky(false); settingsHover = false; showSettings();
+    const r = { start: open() };
+    st.dispatchEvent(new PointerEvent("pointerenter")); await T.sleep(HOVER.settingsOpenMs + 80); r.hover = open();
+    st.dispatchEvent(new PointerEvent("pointerleave")); await T.sleep(HOVER.settingsCloseMs + 150); r.leave = open();
+    st.dispatchEvent(new PointerEvent("pointerenter")); await T.sleep(HOVER.settingsOpenMs + 80);
+    $("settingsbody").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); st.dispatchEvent(new PointerEvent("pointerleave")); await T.sleep(HOVER.settingsCloseMs + 150); r.stuck = open();
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.outside = open();
+    T.eq(r, { start: false, hover: true, leave: false, stuck: true, outside: false }, "settings states");
+    return "ok";
+  });
+
+  await check("session actions: Rename / End for tmux sessions, Take over for read-only ones; confirms first; the server refuses the rest", A, async () => {
+    const acts = (name) => { select(T.node(name).s.sessionId); return [...$("p-actions").querySelectorAll("button")].map((b) => b.textContent); };
+    const r = { beta: acts("Beta"), compacted: acts("Compacted"), client: acts("Client") };
+    const real = window.fetch, realPrompt = window.prompt, realConfirm = window.confirm, posts = [], asked = [];
+    let yes = false;
+    window.fetch = (u, o) => {
+      if (/^\/api\/session\/(rename|end|takeover)$/.test(String(u))) posts.push([String(u).split("/").pop(), JSON.parse(o.body)]);
+      // Take-over is stubbed: on the test server it would start a real `claude --resume` in tmux.
+      if (String(u) === "/api/session/takeover") return Promise.resolve(new Response(JSON.stringify({ tmux: "sb-claude-alpha", attach: "sb attach sb-claude-alpha" }), { status: 200 }));
+      return real(u, o);
+    };
+    window.prompt = (m, d) => { asked.push(["prompt", m, d]); return "Sam's run"; };
+    window.confirm = (m) => { asked.push(["confirm", m]); return yes; };
+    const act = async (name, a) => { select(T.node(name).s.sessionId); quickNote(""); $("p-actions").querySelector(`[data-act="${a}"]`).click(); for (let i = 0; i < 40 && !$("p-quicknote")?.textContent && selected; i++) await T.sleep(50); };
+    try {
+      await act("Beta", "rename");
+      r.renamed = [$("p-quicknote").textContent, $("p-quicknote").classList.contains("bad")];
+      await act("Beta", "end"); r.endDeclined = [posts.length, selected === T.node("Beta").s.sessionId];
+      await act("Compacted", "takeover"); r.takeDeclined = posts.length;
+      r.warns = asked.filter((a) => a[0] === "confirm").map((a) => /original terminal first/.test(a[1]));
+      yes = true;
+      await act("Compacted", "takeover"); r.taken = /Taken over: running in tmux as sb-claude-alpha/.test($("p-quicknote").textContent);
+      await act("Beta", "end"); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
+      r.ended = selected;
+      r.posts = posts.map(([p, b]) => [p, b.sessionId === T.node(p === "takeover" ? "Compacted" : "Beta").s.sessionId, b.name ?? null]);
+    } finally { window.fetch = real; window.prompt = realPrompt; window.confirm = realConfirm; select(null); }
+    const srv = async (p, name) => { const res = await fetch(`/api/session/${p}`, { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: JSON.stringify({ sessionId: T.node(name).s.sessionId, name: "x" }) }); return [res.status, !!(await res.json()).blocked]; };
+    r.server = [await srv("takeover", "Client"), await srv("rename", "Client"), await srv("end", "Compacted"), await srv("takeover", "Beta")];
+    T.eq(r, { beta: ["Rename", "End"], compacted: ["Take over"], client: ["End"], renamed: ["Typed /rename Sam's run", false], endDeclined: [1, true], takeDeclined: 1, // 1 = the rename only
+      warns: [false, true], taken: true, ended: null, posts: [["rename", true, "Sam's run"], ["takeover", true, null], ["end", true, null]],
+      server: [[403, true], [403, true], [409, false], [409, false]] }, "actions");
+    return "ok";
+  });
+  await check("changes view: Chat / Terminal / Changes; git status list, tap a file → escaped +/- diff; back; not polled; blocked refused", A, async () => {
+    const real = window.fetch, calls = [];
+    window.fetch = (u, o) => { if (/^\/api\/session\/(changes|diff)/.test(String(u))) calls.push(String(u)); return real(u, o); };
+    const box = () => $("p-changes");
+    const waitFor = async (cond) => { for (let i = 0; i < 50 && !cond(); i++) await T.sleep(100); };
+    try {
+      select(T.node("Beta").s.sessionId); setView("chat");
+      document.querySelector('#p-view [data-view="changes"]').click();
+      await waitFor(() => box().querySelector(".cfile"));
+      const r = { tabs: [...$("p-view").querySelectorAll("[data-view]")].map((b) => b.textContent), shown: [getComputedStyle(box()).display !== "none", getComputedStyle($("p-log")).display, getComputedStyle($("p-term")).display],
+        head: box().querySelector(".chead span").textContent, files: [...box().querySelectorAll(".cfile")].map((b) => b.textContent).sort() };
+      box().querySelector('.cfile[data-file="new.html"]').click();
+      await waitFor(() => box().querySelector(".cdiff"));
+      const pre = box().querySelector(".cdiff");
+      r.untracked = [box().querySelector(".chead span").textContent, pre.textContent.includes(`+<script>window.__pwned = 1<\/script>`), !pre.querySelector("script, img") && !window.__pwned,
+        pre.querySelectorAll(".da").length, /Menlo|monospace/.test(getComputedStyle(pre).fontFamily)];
+      box().querySelector("[data-cback]").click(); await waitFor(() => box().querySelector(".cfile"));
+      box().querySelector('.cfile[data-file="a.ts"]').click(); await waitFor(() => box().querySelector(".cdiff"));
+      const line = (t) => [...box().querySelectorAll(".cdiff span")].find((s) => s.textContent === t)?.className;
+      r.modified = [line("-const b = 2;"), line("+const b = 3;"), line(" const a = 1;"), line("--- a/a.ts"), [...box().querySelectorAll(".cdiff span")].some((s) => s.className === "dh")];
+      const c = calls.length; await T.sleep(2500); r.polled = calls.length - c;
+      // Blocked folder: the page doesn't ask; the server refuses with {blocked} anyway.
+      select(T.node("Client").s.sessionId); setView("changes"); await T.sleep(300);
+      r.blocked = [calls.length - c, /off for this folder \(blocked\)/.test(box().textContent)];
+      const res = await real(`/api/session/changes?id=${encodeURIComponent(T.node("Client").s.sessionId)}`), d = await res.json();
+      r.server = [res.status, d.blocked];
+      const trav = await real(`/api/session/diff?id=${encodeURIComponent(T.node("Beta").s.sessionId)}&file=${encodeURIComponent("../../../etc/passwd")}`);
+      r.traversal = trav.status;
+      T.eq(r, { tabs: ["Chat", "Terminal", "Changes"], shown: [true, "none", "none"], head: "on main · 4 changed files",
+        files: ["??new.html", "??sub dir/odd name.md", "Dgone.txt", "Ma.ts"], untracked: ["new.html", true, true, 2, true],
+        modified: ["dd", "da", "", "dm", true], polled: 0, blocked: [0, true], server: [403, true], traversal: 404 }, "changes");
+      return "ok";
+    } finally { window.fetch = real; setView("chat"); select(null); }
+  });
+  await check("trust prompt: a waiting spawn shows a grey row on the map and in the list; Trust it posts its tmux name", A, async () => {
+    const real = window.fetch, posts = [];
+    const wait = { name: "Mirza's new", tmux: "sb-claude-alpha-9", cwd: "/x/alpha", profile: "claude", at: Date.now() };
+    window.fetch = async (u, o) => {
+      if (String(u) === "/api/session/trust") { posts.push(JSON.parse(o.body)); return new Response(JSON.stringify({ trusted: wait.name }), { headers: { "content-type": "application/json" } }); }
+      const res = await real(u, o);
+      if (!String(u).startsWith("/api/state")) return res;
+      const d = await res.json(); d.trustWaits = [wait];
+      return new Response(JSON.stringify(d), { headers: { "content-type": "application/json" } });
+    };
+    try {
+      for (let i = 0; i < 40 && !$("trustwaits-map").querySelector(".trustwait"); i++) await T.sleep(100);
+      const row = $("trustwaits-map").querySelector(".trustwait");
+      T.assert(row && /Mirza's new/.test(row.textContent) && $("trustwaits-list").querySelector(".trustwait"), "row on the map and in the list");
+      row.querySelector("[data-trust]").click();
+      for (let i = 0; i < 30 && !posts.length; i++) await T.sleep(100);
+      T.eq(posts, [{ tmux: "sb-claude-alpha-9" }], "posted");
+    } finally { window.fetch = real; }
+    for (let i = 0; i < 40 && $("trustwaits-map").children.length; i++) await T.sleep(100);
+    T.eq($("trustwaits-map").children.length, 0, "gone once state has none");
+    return "ok";
+  });
+  await check("desktop: ＋ New session on the map opens a centred box; Esc closes it", A, async () => {
+    $("newbtn").click();
+    for (let i = 0; i < 40 && !$("ns-folders").querySelector(".nsf"); i++) await T.sleep(100);
+    const b = document.querySelector("#newsheet .nsbox").getBoundingClientRect();
+    const r = { open: !$("newsheet").hidden, centred: b.width < innerWidth / 2 && Math.abs(b.left + b.width / 2 - innerWidth / 2) < 2, folders: $("ns-folders").querySelectorAll(".nsf").length > 3 };
+    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    r.closed = $("newsheet").hidden;
+    T.eq(r, { open: true, centred: true, folders: true, closed: true }, "desktop new");
+    return "ok";
+  });
+
+  // ---- two tabs ----
+  const B = document.createElement("iframe");
+  B.src = "/";
+  await run(A, () => { localStorage.setItem("sb-handsfree", "1"); hf = { node: { disconnect() {} }, stream: { getTracks: () => [] }, ctx: { close() {} }, queue: Promise.resolve() }; claimMic(); return true; });
+  document.body.appendChild(B);
+  await new Promise((r) => (B.onload = r));
+  await sleep(2500);
+  await run(B, HELPERS);
+
+  await check("two tabs: a hidden message is hidden in the other tab too", B, () => {
+    const id = parent.document.getElementById("a").contentWindow.__hiddenId; T.assert(id && !mainLog.els.get(id), "hidden in B"); return "ok";
+  });
+  await check("two tabs: same sessions and chat", B, () => { T.eq(nodes.size, 7, "bubbles in tab B"); T.assert(state.dispatcher.chat.length > 10, "chat in tab B"); return "ok"; });
+  await check("two tabs: second tab doesn't record while the first owns the mic", B, () => {
+    T.eq(!!hf, false, "B recording"); T.assert(/another tab/.test($("hftext").textContent), $("hftext").textContent); T.eq($("hfoff").textContent, "Use mic here", "button"); return "ok";
+  });
+  await run(B, () => { channel.postMessage({ type: "mic-claim", tab: TAB }); return true; });
+  await sleep(300);
+  await check("two tabs: taking over stops recording in the first tab", A, () => {
+    T.eq(!!hf, false, "A still recording"); T.assert(/another tab/.test($("hftext").textContent), "A message"); return "ok";
+  });
+  await run(A, () => { releaseMic(); localStorage.setItem("sb-handsfree", "0"); $("hfbar").className = ""; return true; });
+  await run(A, () => { $("collapsebtn").click(); applyWidth(520); localStorage.setItem("sb-chat-w", 520); return true; });
+  await sleep(300);
+  await run(A, () => fetch("/api/pulse", { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: JSON.stringify({ names: ["Compacted"], kind: "continue" }) }).then(() => true));
+  await check("two tabs: a pulse shows in the other tab too", B, async () => {
+    let seen = false;
+    for (let i = 0; i < 40 && !seen; i++) { await T.sleep(100); seen = T.node("Compacted").g.classList.contains("flash-continue"); }
+    T.assert(seen, "Compacted should flash green in tab B"); return "ok";
+  });
+  await check("two tabs: settings and chat width follow the other tab", B, () => {
+    T.eq(collapseLong, true, "collapse setting"); T.eq(chatWidth, 520, "chat width"); return "ok";
+  });
+  await run(A, () => { $("collapsebtn").click(); applyWidth(380); localStorage.setItem("sb-chat-w", 380); return true; });
+
+  // ---- phone (390×844, like a phone in portrait) ----
+  const P = document.createElement("iframe");
+  P.src = "/"; P.style.width = "390px"; P.style.height = "844px";
+  document.body.appendChild(P);
+  await new Promise((r) => (P.onload = r));
+  await sleep(2500);
+  await run(P, HELPERS);
+  await check("phone: one screen at a time with tabs; settings move to their own tab; desktop has no tabs", P, () => {
+    T.assert(document.body.classList.contains("phone"), "phone class");
+    T.eq(getComputedStyle($("tabs")).display, "flex", "tabs shown");
+    const shown = () => ["chat", "list", "mapwrap", "more"].filter((id) => getComputedStyle($(id)).display !== "none");
+    setTab("chat"); const a = shown(); setTab("map"); const b = shown(); setTab("more"); const c = shown();
+    T.eq([a, b, c], [["chat"], ["mapwrap"], ["more"]], "visible panes");
+    T.assert($("more").contains($("settings")) && getComputedStyle($("settingsbody")).display !== "none", "settings in their tab, open");
+    T.eq(getComputedStyle($("input")).fontSize, "16px", "input 16px (no iOS zoom)");
+    const desk = parent.document.getElementById("a").contentWindow;
+    T.assert(!desk.document.body.classList.contains("phone") && desk.getComputedStyle(desk.document.getElementById("tabs")).display === "none", "desktop unchanged");
+    return "ok";
+  });
+  await check("phone: Sessions tab lists every session, waiting-on-you first, badge counts them", P, () => {
+    setTab("list");
+    const rows = [...document.querySelectorAll("#rows .srow-s")];
+    T.eq(rows.length, nodes.size, "one row per bubble");
+    const waiting = [...nodes.values()].filter((n) => askOf(n.s) || n.s.state === "needs-you").length;
+    T.assert(waiting > 0, "fixture has a waiting session");
+    const firstIds = rows.slice(0, waiting).map((r) => r.dataset.id);
+    T.assert(firstIds.every((id) => { const s = nodes.get(id).s; return askOf(s) || s.state === "needs-you"; }), "waiting ones on top");
+    T.assert(rows[0].querySelector(".q"), "? on the first row");
+    T.eq($("needsbadge").textContent, String(waiting), "badge");
+    return `${rows.length} rows, ${waiting} waiting`;
+  });
+  await check("phone: tapping a session opens it full screen with the reply box open; Back closes it", P, async () => {
+    select(null);
+    const id = document.querySelector("#rows .srow-s").dataset.id;
+    document.querySelector("#rows .srow-s").click();
+    const r = panel.getBoundingClientRect();
+    T.eq([selected, Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], [id, 0, 0, innerWidth, innerHeight], "full screen sheet");
+    T.assert(!$("p-form").classList.contains("collapsed"), "reply box open");
+    T.eq(history.state?.sb, "session", "history entry for the back gesture");
+    T.assert(getComputedStyle(panel.querySelector(".close")).display !== "none" && getComputedStyle($("p-pin")).display === "none", "Back shown, Pin hidden");
+    closePopup(); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
+    T.eq(selected, null, "closed by Back");
+    return "ok";
+  });
+  await check("phone: with the keyboard up the page fits above it and the tabs hide", P, () => {
+    const real = Object.getOwnPropertyDescriptor(window, "visualViewport");
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: { height: 500, offsetTop: 0 } });
+    try { fitKeyboard(); T.eq([document.body.getBoundingClientRect().height, getComputedStyle($("tabs")).display], [500, "none"], "keyboard up"); }
+    finally { real ? Object.defineProperty(window, "visualViewport", real) : delete window.visualViewport; }
+    fitKeyboard(); T.eq([Math.round(document.body.getBoundingClientRect().height), getComputedStyle($("tabs")).display], [innerHeight, "flex"], "keyboard down");
+    return "ok";
+  });
+  // ---- connection loss (phone frame): fetch is cut, hangs, comes back ----
+  await run(P, () => {
+    window.__real = window.fetch; window.__net = { down: false, hang: false, calls: [], lose: false };
+    window.fetch = (url, opts = {}) => {
+      const n = window.__net; n.calls.push({ url: String(url), body: opts.body });
+      if (n.hang) return new Promise((_, reject) => opts.signal?.addEventListener("abort", () => reject(new DOMException("timeout", "TimeoutError"))));
+      if (n.down) return Promise.reject(new TypeError("Failed to fetch"));
+      // Lost response: the request reaches the "server", the answer never comes back.
+      if (n.lose && String(url) === "/api/say") return Promise.reject(new TypeError("network changed"));
+      if (String(url) === "/api/say") return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      return window.__real(url, opts);
+    };
+    return true;
+  });
+  await check("offline: polls fail → banner and status say so; nothing hangs (8 s timeout on a dead request)", P, async () => {
+    __net.down = true; await T.sleep(2600);
+    const r = { banner: getComputedStyle($("offline")).display, status: /no connection/.test($("status").textContent) };
+    __net.down = false; __net.hang = true;
+    const t0 = Date.now(); let err; try { await request("/api/state", {}, 300); } catch (e) { err = e; }
+    r.hungTimesOut = !!err?.net && Date.now() - t0 < 1500;
+    __net.hang = false; await T.sleep(2600);
+    r.bannerAfter = getComputedStyle($("offline")).display;
+    T.eq(r, { banner: "block", status: true, hungTimesOut: true, bannerAfter: "none" }, "offline states");
+    return "ok";
+  });
+  await check("offline: a message sent with no connection is kept, survives a reload, and goes out once when it's back", P, async () => {
+    localStorage.removeItem("sb-outbox");
+    __net.down = true;
+    const p = { text: "sent in a tunnel", at: Date.now(), status: "sending" }; pendingSays.push(p); await deliver(p); // what sayText does (stubbed in tests)
+    const r = { status: p.status, net: p.net, note: /no connection/.test(p.error), saved: JSON.parse(localStorage.getItem("sb-outbox") || "[]").map((o) => o.text) };
+    // The phone kills the page: a fresh list restored from the outbox has it again, with the same id.
+    pendingSays.length = 0; restoreOutbox();
+    const back = pendingSays.find((x) => x.text === "sent in a tunnel");
+    r.restored = back?.status; r.sameId = back?.id === p.id;
+    // Connection back: sent by itself, exactly once.
+    __net.calls.length = 0; __net.down = false; setOnline(false); setOnline(true);
+    for (let i = 0; i < 20 && back.status !== "sent"; i++) await T.sleep(50);
+    const sends = __net.calls.filter((c) => c.url === "/api/say").map((c) => JSON.parse(c.body));
+    r.after = back.status; r.sends = sends.map((b) => b.text); r.idSent = sends[0]?.id === p.id;
+    r.outboxEmpty = !localStorage.getItem("sb-outbox");
+    T.eq(r, { status: "failed", net: true, note: true, saved: ["sent in a tunnel"], restored: "failed", sameId: true, after: "sent", sends: ["sent in a tunnel"], idSent: true, outboxEmpty: true }, "outbox");
+    pendingSays.length = 0; renderChat(state.dispatcher);
+    return "ok";
+  });
+  await check("offline: response lost after the server got it → retried with the same id (the server types it once)", P, async () => {
+    __net.lose = true; __net.calls.length = 0;
+    const p = { text: "answer lost on the way back", at: Date.now(), status: "sending" }; pendingSays.push(p); await deliver(p); // what sayText does (stubbed in tests)
+    const first = p.status;
+    __net.lose = false; retryUnsent();
+    for (let i = 0; i < 20 && p.status !== "sent"; i++) await T.sleep(50);
+    const ids = __net.calls.filter((c) => c.url === "/api/say").map((c) => JSON.parse(c.body).id);
+    T.eq([first, p.status, ids.length, ids[0] === ids[1]], ["failed", "sent", 2, true], "lost response");
+    pendingSays.length = 0; renderChat(state.dispatcher); localStorage.removeItem("sb-outbox");
+    return "ok";
+  });
+  await check("offline: a recording made with no connection is kept and transcribed when it's back", P, async () => {
+    __net.down = true; let waits = 0;
+    const wav = encodeWav(new Float32Array(1600), 16000);
+    setTimeout(() => (__net.down = false), 2500);
+    const data = await transcribeWav(wav, () => waits++);
+    T.assert(waits >= 1, "waited"); T.assert(typeof data.text === "string", "transcribed after reconnect");
+    return `waited ${waits}×, then transcribed`;
+  });
+  await check("offline: a session reply typed with no connection stays with that session after closing its popup", P, async () => {
+    const id = T.node("Compacted").s.sessionId;
+    __net.down = true; select(id); await sayToSession("for Compacted only"); select(null);
+    const kept = sessionPending.get(id)?.map((p) => [p.text, p.status]);
+    select(id); const shown = !!mainLog && popup.pending.some((p) => p.text === "for Compacted only");
+    __net.down = false; select(null); sessionPending.delete(id); saveOutbox();
+    T.eq([kept, shown], [[["for Compacted only", "failed"]], true], "kept per session");
+    return "ok";
+  });
+  await run(P, () => { window.fetch = window.__real; return true; });
+
+  await check("icons: tab icon (SVG + PNG), favicon.ico, home screen and manifest icons all load", P, async () => {
+    const links = [...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"]')].map((l) => l.getAttribute("href"));
+    const manifest = await (await fetch("/manifest.webmanifest")).json();
+    const all = [...new Set([...links, "/favicon.ico", ...manifest.icons.map((i) => i.src)])];
+    const bad = [];
+    for (const u of all) { const r = await fetch(u); if (!r.ok || !/^image\//.test(r.headers.get("content-type"))) bad.push(`${u} ${r.status}`); }
+    T.eq(bad, [], "icons that failed");
+    T.assert(manifest.icons.some((i) => i.sizes === "512x512" && i.type === "image/png"), "512 PNG for install");
+    return all.join(" ");
+  });
+  await check("phone: the session sheet folds tool calls and shows question cards too; list shows the short name", P, async () => {
+    setTab("list");
+    const row = [...document.querySelectorAll("#rows .srow-s")].find((x) => x.querySelector(".nm").title === "repo-abc-12-93");
+    const listName = row.querySelector(".nm").firstChild.textContent;
+    row.click();
+    for (let i = 0; i < 40 && !$("p-log").querySelector(".askcard"); i++) await T.sleep(100);
+    const r = { listName, groups: $("p-log").querySelectorAll(".tgroup").length, cards: $("p-log").querySelectorAll(".askcard").length,
+      cardFits: $("p-log").querySelector(".askcard").getBoundingClientRect().width <= innerWidth };
+    closePopup(); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
+    T.eq(r, { listName: "ABC-12", groups: 2, cards: 2, cardFits: true }, "phone sheet");
+    setTab("chat");
+    return "ok";
+  });
+  await check("phone: a touch never opens a hover popup, and routes don't take over the screen", P, async () => {
+    select(null); setTab("map");
+    const n = T.node("Compacted");
+    n.g.dispatchEvent(new PointerEvent("pointerenter", { pointerType: "touch" })); await T.sleep(HOVER.openMs + 120);
+    const afterTouch = selected;
+    followRoute(n);
+    T.eq([afterTouch, selected], [null, null], "nothing opened");
+    setTab("chat");
+    return "ok";
+  });
+  await check("phone: the sheet's Terminal view fits the screen and scrolls sideways; chips and quick keys reachable", P, async () => {
+    setTab("list");
+    [...document.querySelectorAll("#rows .srow-s")].find((x) => x.querySelector(".nm").title === "Beta").click();
+    setView("term");
+    const term = $("p-term");
+    for (let i = 0; i < 40 && !/tick/.test(term.textContent); i++) await T.sleep(100);
+    const inside = (el) => { const b = el.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight && b.width > 0; };
+    const r = { full: Math.round(panel.getBoundingClientRect().width) === innerWidth, termFits: inside(term), sideways: term.scrollWidth > term.clientWidth,
+      pageNotWider: document.documentElement.scrollWidth <= innerWidth, coloured: !!term.querySelector("span[style]"), termTall: term.clientHeight > 150,
+      stop: inside($("p-tools").querySelector(".stop")), chip: inside($("p-tools").querySelector(".qchip")), reply: inside($("p-input")),
+      // Every key on screen at once: the row wraps instead of scrolling sideways.
+      keys: [...$("p-tools").querySelectorAll(".qkeys button")].map((b) => inside(b) ? "" : b.textContent).filter(Boolean), keyRows: new Set([...$("p-tools").querySelectorAll(".qkeys button")].map((b) => Math.round(b.getBoundingClientRect().top))).size > 1,
+      typeBox: inside($("p-ttext")) && inside($("p-ttype").querySelector("button")), typeFont: getComputedStyle($("p-ttext")).fontSize };
+    setView("chat"); closePopup(); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
+    setTab("chat");
+    T.eq(r, { full: true, termFits: true, sideways: true, pageNotWider: true, coloured: true, termTall: true, stop: true, chip: true, reply: true,
+      keys: [], keyRows: true, typeBox: true, typeFont: "16px" }, "phone terminal");
+    return "ok";
+  });
+
+  await check("phone: the sheet's Changes view fits the screen; a diff scrolls sideways inside it, not the page; actions reachable", P, async () => {
+    setTab("list");
+    [...document.querySelectorAll("#rows .srow-s")].find((x) => x.querySelector(".nm").title === "Beta").click();
+    setView("changes");
+    const box = $("p-changes");
+    for (let i = 0; i < 50 && !box.querySelector(".cfile"); i++) await T.sleep(100);
+    const inside = (el) => { const b = el.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth + 0.5 && b.width > 0; };
+    const r = { list: inside(box) && inside(box.querySelector(".cfile")), fileFont: getComputedStyle(box.querySelector(".cfile")).fontSize,
+      actions: [...$("p-actions").querySelectorAll("button")].every(inside) };
+    box.querySelector('.cfile[data-file="new.html"]').click();
+    for (let i = 0; i < 50 && !box.querySelector(".cdiff"); i++) await T.sleep(100);
+    const pre = box.querySelector(".cdiff");
+    r.diff = [inside(pre), document.documentElement.scrollWidth <= innerWidth, pre.querySelectorAll("span").length > 3];
+    setView("chat"); closePopup(); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
+    setTab("chat");
+    T.eq(r, { list: true, fileFont: "13px", actions: true, diff: [true, true, true] }, "phone changes");
+    return "ok";
+  });
+  await check("phone: ＋ New in Sessions → folder list (recent first, no blocked), name + prompt → spawn; guard errors shown; back to the list", P, async () => {
+    setTab("list"); select(null); $("ns-done").textContent = "";
+    $("newbtn-list").click();
+    for (let i = 0; i < 40 && !$("ns-folders").querySelector(".nsf"); i++) await T.sleep(100);
+    const box = document.querySelector("#newsheet .nsbox").getBoundingClientRect();
+    const labels = () => [...$("ns-folders").querySelectorAll(".nsf span")].map((s) => s.textContent);
+    const all = labels(), recent = [...$("ns-folders").querySelectorAll(".nsf")].map((b) => !!b.querySelector("i"));
+    const r = { full: Math.round(box.width) === innerWidth && Math.round(box.height) === innerHeight, alpha: all.includes("~/Projects/alpha"),
+      noBlocked: !all.some((l) => /client/.test(l)), recentFirst: recent.indexOf(false) === -1 || recent.slice(recent.indexOf(false)).every((x) => !x),
+      history: history.state?.sb, filterFont: getComputedStyle($("ns-filter")).fontSize };
+    $("ns-filter").value = "alph"; $("ns-filter").dispatchEvent(new Event("input"));
+    r.filtered = labels();
+    $("ns-folders").querySelector(".nsf").click();
+    r.form = !$("ns-form").hidden && $("ns-pick").hidden; r.folder = $("ns-folder").textContent; r.placeholder = $("ns-name").placeholder;
+    r.inputFonts = [getComputedStyle($("ns-name")).fontSize, getComputedStyle($("ns-prompt")).fontSize];
+    const real = window.fetch, spawns = [];
+    let answer = { status: 400, body: { error: "LIMIT: 5 Switchboard sessions are alive (max 5)." } };
+    window.fetch = (u, o) => { if (String(u) === "/api/spawn") { spawns.push(JSON.parse(o.body)); return Promise.resolve(new Response(JSON.stringify(answer.body), { status: answer.status })); } return real(u, o); };
+    try {
+      $("ns-start").click(); await T.sleep(100);
+      r.emptyPrompt = [spawns.length, /first prompt/.test($("ns-error").textContent)];
+      $("ns-prompt").value = "look at ABC-12 with Mirza"; $("ns-start").click();
+      for (let i = 0; i < 30 && !/LIMIT/.test($("ns-error").textContent); i++) await T.sleep(50);
+      r.refused = [$("ns-error").textContent, $("newsheet").hidden];
+      answer = { status: 200, body: { name: "alpha", backend: "tmux", profile: "claude", cwd: "/x/alpha", attach: "sb attach sb-claude-alpha" } };
+      $("ns-name").value = "Sam's run"; $("ns-start").click();
+      for (let i = 0; i < 30 && !$("newsheet").hidden; i++) await T.sleep(50);
+      for (let i = 0; i < 20 && history.state?.sb === "new"; i++) await T.sleep(50);
+      r.sent = spawns.map((b) => [b.cwd.endsWith("/Projects/alpha"), b.name, b.prompt]);
+      r.after = [$("newsheet").hidden, document.body.dataset.tab, /^Started alpha in ~\/Projects\/alpha/.test($("ns-done").textContent), history.state?.sb ?? null];
+    } finally { window.fetch = real; }
+    // The real server: blocked folders are refused by spawnSession's guard, and never listed.
+    const blocked = await fetch("/api/spawn", { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: JSON.stringify({ cwd: "~/work/client-x", prompt: "p" }) });
+    r.server = [blocked.status, /BLOCKED/.test((await blocked.json()).error)];
+    const folders = (await (await fetch("/api/folders")).json()).folders.map((f) => f.label);
+    r.serverList = [folders.includes("~/Projects/alpha"), folders.some((f) => /client|dispatcher/.test(f))];
+    $("ns-done").textContent = ""; setTab("chat");
+    T.eq(r, { full: true, alpha: true, noBlocked: true, recentFirst: true, history: "new", filterFont: "16px", filtered: ["~/Projects/alpha"], form: true,
+      folder: "~/Projects/alpha", placeholder: "alpha", inputFonts: ["16px", "16px"], emptyPrompt: [0, true],
+      refused: ["LIMIT: 5 Switchboard sessions are alive (max 5).", false],
+      sent: [[true, "", "look at ABC-12 with Mirza"], [true, "Sam's run", "look at ABC-12 with Mirza"]], after: [true, "list", true, null],
+      server: [400, true], serverList: [true, false] }, "new session");
+    return "ok";
+  });
+
+  await fetch("/test/results", { method: "POST", body: JSON.stringify(results) });
+})();
+</script>
+</body>
+</html>

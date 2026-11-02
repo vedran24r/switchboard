@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+# Never commit local state, recordings or test output
+.switchboard/
+*.wav
+*.b64
+config.json
+!config.example.json
+
+# Agent worktrees (Claude Code)
+.claude/worktrees/

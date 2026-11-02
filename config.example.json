@@ -1,0 +1,20 @@
+{
+  "blocked": ["~/work/client-a*", "~/work/client-b*"],
+  "profiles": { "~/GameProjects": "game" },
+  "configDirs": { "claude": "", "game": "~/.claude-game" },
+  "sendProfiles": ["claude", "game"],
+  "maxLiveSpawned": 5,
+  "remoteLogins": ["you@example.com"],
+  "handoffTokens": 300000,
+  "staleHours": 4,
+  "domains": [
+    { "match": "~/work/client-a*", "domain": "client", "icon": "🏥", "color": "#0d9488" },
+    { "match": "~/work", "domain": "work", "icon": "💼", "color": "#2563eb" },
+    { "match": "~/GameProjects", "domain": "game", "icon": "🎮", "color": "#16a34a" },
+    { "match": "~/Projects", "domain": "tools", "icon": "🛠️", "color": "#ea580c" },
+    { "match": "~", "domain": "home", "icon": "🏠", "color": "#a16207" }
+  ],
+  "sessionStyles": { "PZ": { "icon": "🧟" } },
+  "vocabulary": "Switchboard, Claude, Pocket, Tailscale, GitHub, Postgres, hand off, worktree, Alex, Sam",
+  "corrections": { "get hub": "GitHub", "post gress": "Postgres" }
+}
