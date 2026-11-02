@@ -201,6 +201,19 @@ const HELPERS = () => {
     return "ok";
   });
 
+  await check("panel reply box: a very long message grows only into the room left, never past the panel's bottom", A, async () => {
+    select(T.node("Beta").s.sessionId); await T.sleep(150);
+    document.querySelector("#panel .replyhere")?.click(); await T.sleep(50);
+    const inp = $("p-input"), send = $("p-form").querySelector(".send");
+    inp.value = "A long dictated message for Sam about ABC-12. ".repeat(120); inp.dispatchEvent(new Event("input"));
+    await T.sleep(100);
+    const p = panel.getBoundingClientRect(), b = inp.getBoundingClientRect(), s = send.getBoundingClientRect();
+    const r = { boxInside: b.bottom <= p.bottom + 1 && b.height > 40, sendInside: s.bottom <= p.bottom + 1, scrolls: inp.scrollHeight > inp.clientHeight, logShown: $("p-log").clientHeight >= 60 };
+    inp.value = ""; inp.dispatchEvent(new Event("input")); inp.blur(); select(null);
+    T.eq(r, { boxInside: true, sendInside: true, scrolls: true, logShown: true }, "long reply");
+    return "ok";
+  });
+
   await check("quick replies: '?' on waiting bubbles; popup buttons send via the reply path on click; blocked folder gets none", A, async () => {
     T.sent.length = 0;
     T.assert(T.node("Waiting").askG.style.display !== "none", "? on Waiting");

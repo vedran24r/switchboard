@@ -1359,7 +1359,14 @@ function makeComposer({ form, input, mic, note, onSend }) {
     const borders = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
     const want = Math.round(Math.min(innerHeight * 0.45, Math.max(parseFloat(cs.minHeight) || 0, mirror.scrollHeight + borders)));
     if (Math.abs(input.offsetHeight - want) > 1) input.style.height = want + "px";
+    // In the session panel (fixed max height, overflow hidden) only grow into the room that's left; past that the box
+    // scrolls. Otherwise quick replies + the key rows push the end of a long message out of sight.
+    const box = form.closest("aside");
+    const over = box ? box.scrollHeight - box.clientHeight : 0;
+    if (over > 0) input.style.height = Math.max(parseFloat(cs.minHeight) || 0, input.offsetHeight - over) + "px";
   };
+  const box = form.closest("aside");
+  if (box) new ResizeObserver(() => autosize()).observe(box);
   const say = (t) => { if (note) note.textContent = t; };
   c.autosize = autosize;
 
