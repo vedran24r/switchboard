@@ -25,9 +25,10 @@ export interface PickerIO { screen(): string; press(args: string[]): void }
 export const MISMATCH = "Couldn't answer automatically, use the Terminal tab";
 const refuse = (message: string, status: number, extra: Record<string, unknown> = {}) => Object.assign(new Error(message), { status, ...extra });
 const norm = (s: string) => s.replace(/\s+/g, " ").trim();
-/** Screen text vs. what it should say: equal, or the start of it (long text wraps or is cut with "…"). */
+/** Screen text vs. what it should say: equal, or the start of it (long text is cut with "…"). Spaces don't count: wrapping
+ * may break a line inside a word or at a space, and joined lines can't tell which. */
 export function same(screen: string | undefined, want: string): boolean {
-  const a = norm(screen ?? "").replace(/…$/, "").trim(), b = norm(want);
+  const a = norm(screen ?? "").replace(/…$/, "").replace(/ /g, ""), b = norm(want).replace(/ /g, "");
   return !!a && (a === b || (b.startsWith(a) && a.length >= Math.min(b.length, 10)));
 }
 

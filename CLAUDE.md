@@ -84,6 +84,9 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   ☐/☒) after every key, and stops on the first surprise (409 "Couldn't answer automatically…", `detail` says which step).
   Tests: `test/fake-picker.ts` is a scripted picker drawn like the real captures; run as a script it's a fake `tmux`
   (state in `$FAKE_PICKER_STATE`). The browser tests route `pk-claude-repo-ABC-12` to it.
+- A long question is drawn wrapped inside a `│ ` quote box (`│ D1: Where should…` / `│ …rest`); `parsePicker` drops the gutter
+  and joins the lines, and `same()` ignores spaces (a wrap may split a word). Without that every long question got
+  "Couldn't answer automatically" before a key was pressed (2026-11-02). The fake picker draws the box for questions > 96 chars.
 - `tmux send-keys -l "-x"` fails ("unknown flag -x"): typed text goes after `-l --`.
 - `display` (sessions.ts `displayName`): auto = lowercase folder + optional `-<hex>`; a cased name like "Beta" is someone's.
 - Pocket's API rejects session names with uppercase (`SESSION_RE` `^(pk|ro)-[a-z0-9._-]+$`, "bad session"), yet names sessions

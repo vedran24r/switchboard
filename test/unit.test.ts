@@ -751,6 +751,23 @@ ${RULE}
 
 Enter to select · ↑/↓ to navigate · Esc to cancel`;
 
+// A long question wraps inside a "│ " quote box (shape of a real 4-question capture, 2026-11-02, text swapped).
+const PICKER_BOXED = `${RULE}
+←  ☐ Job home  ☐ New item  ☐ Recipients  ☐ Go  ✔ Submit  →
+
+│ D1: Where should the daily job for ABC-12 run? The list and the 'team → its members' roll-up both live in
+│ the first service.
+
+❯ 1. First service (Recommended)
+     Reuses the existing roll-up query; the mail service still sends the email
+  2. Second service (as the ticket says)
+     Would need a copy of the roll-up query
+  3. Type something.
+${RULE}
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel`;
+
 test("picker screens: tabs, question, rows, boxes, highlighted row, the review step (real captures)", async () => {
   const { parsePicker } = await import("../src/asks.ts");
   const first = parsePicker(PICKER_FIRST)!;
@@ -764,6 +781,9 @@ test("picker screens: tabs, question, rows, boxes, highlighted row, the review s
   const review = parsePicker(PICKER_REVIEW)!;
   assert.deepEqual([review.review, review.incomplete, review.answers, review.rows.find((r) => r.cursor)?.label], [true, false, ["Green", "Cheese, Basil, Mushrooms", "Medium please"], "Submit answers"]);
   assert.equal(parsePicker(PICKER_REVIEW.replace("Review your answers\n", "Review your answers\n\n⚠ You have not answered all questions\n"))!.incomplete, true);
+  const boxed = parsePicker(PICKER_BOXED)!;
+  assert.equal(boxed.title, "D1: Where should the daily job for ABC-12 run? The list and the 'team → its members' roll-up both live in the first service.", "quote box: gutter dropped, wrapped lines joined");
+  assert.deepEqual(boxed.rows.map((r) => [r.n, r.cursor]), [[1, true], [2, false], [3, false], [4, false]]);
   assert.deepEqual(parsePicker(PICKER_ONE)!.tabs, [{ label: "Plan", done: false }], "one question: no arrows, no Submit tab");
   assert.equal(parsePicker(" Do you want to proceed?\n ❯ 1. Yes\n   2. No\n"), undefined, "a permission dialog isn't a picker");
   assert.equal(parsePicker("- ☐ write the tests\n- ☒ ship it\n"), undefined, "a checklist in a reply isn't one either");
@@ -804,6 +824,13 @@ test("picker driving: every flow presses the right keys and checks the screen af
   const many = await run([colour, extras, size], [{ picks: [1] }, { picks: [2, 0], other: "Mushrooms" }, { picks: [], other: "Medium please" }]);
   assert.deepEqual(many.keys, ["Down", "Enter", "Space", "Down", "Down", "Space", "Down", "-l -- Mushrooms", "Down", "Enter", "Down", "Down", "-l -- Medium please", "Enter", "Enter"]);
   assert.deepEqual([many.closed, many.texts], ["submitted", ["Green", "Cheese, Basil, Mushrooms", "Medium please"]]);
+  // Four long questions (each wraps inside a "│ " quote box), as in the 2026-11-02 bug: answered, not refused.
+  const long = (n: number, tail: string) => ({ question: `D${n}: ${"Where should the daily job for ABC-12 run, given that Sam and Mirza both own parts of it? ".repeat(2)}${tail}`,
+    header: `Q${n}`, options: [{ label: "Go", description: "Write failing tests first, then build" }, { label: "Change the plan first" }] });
+  const boxedQs = [long(1, "One?"), long(2, "Two?"), long(3, "Three?"), long(4, "spec + test. Go?")];
+  assert.ok(render(newPicker(boxedQs)).includes("│ D1: Where should"), "the fake draws the quote box");
+  const boxedRun = await run(boxedQs, [{ picks: [0] }, { picks: [1] }, { picks: [0] }, { picks: [0] }]);
+  assert.deepEqual([boxedRun.error, boxedRun.keys, boxedRun.closed], [undefined, ["Enter", "Down", "Enter", "Enter", "Enter", "Enter"], "submitted"]);
   // A multiSelect question on its own still has the review step.
   const ms = await run([extras], [{ picks: [1] }]);
   assert.deepEqual([ms.keys, ms.closed], [["Down", "Space", "Down", "Down", "Down", "Enter", "Enter"], "submitted"]);

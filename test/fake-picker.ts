@@ -26,6 +26,17 @@ export function newPicker(questions: FakeQuestion[], extra: Partial<FakeState> =
 }
 
 const W = 100, RULE = "─".repeat(W);
+/** Word wrap at `width` (a word longer than that is cut). */
+const wrap = (text: string, width: number) => {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    if (line && line.length + 1 + word.length > width) { lines.push(line); line = ""; }
+    line = line ? `${line} ${word}` : word;
+    while (line.length > width) { lines.push(line.slice(0, width)); line = line.slice(width); }
+  }
+  return line ? [...lines, line] : lines;
+};
 const answered = (q: FakeQuestion, a: Answer) => a.picks.length > 0 || !!a.other;
 const answerText = (q: FakeQuestion, a: Answer) => [...[...a.picks].sort((x, y) => x - y).map((p) => q.options[p].label), ...(a.other ? [a.other] : [])].join(", ");
 
@@ -89,7 +100,9 @@ export function render(st: FakeState): string {
     return out.join("\n") + "\n";
   }
   const q = qs[st.tab], a = st.answers[st.tab], n = q.options.length;
-  out.push(q.question, "");
+  // A question longer than a line wraps inside a "│ " quote box (real capture, 2026-11-02); a short one is drawn as is.
+  if (q.question.length <= W - 4) out.push(q.question, "");
+  else out.push(...wrap(q.question, W - 4).map((l) => `│ ${l}`), "");
   for (const [j, o] of q.options.entries()) {
     if (q.multiSelect) out.push(`${cur(j + 1)}${j + 1}. [${a.picks.includes(j) ? "✔" : " "}] ${o.label}`, ...(o.description ? [`         ${o.description}`] : []));
     else out.push(`${cur(j + 1)}${j + 1}. ${o.label}${a.picks[0] === j ? " ✔" : ""}`, ...(o.description ? [`     ${o.description}`] : []));

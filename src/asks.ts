@@ -166,7 +166,10 @@ export function parsePicker(screen: string): PickerScreen | undefined {
   const rest = lines.slice(at + 1);
   if (!rest.some((l) => /Enter to select|Submit answers/.test(l))) return;
   const tabs = [...lines[at].matchAll(/([☐☒✔])\s(.+?)(?=\s{2,}|\s*→|$)/g)].filter((m) => m[1] !== "✔").map((m) => ({ label: m[2].trim(), done: m[1] === "☒" }));
-  const title = rest.find((l) => l.trim())?.trim() ?? "";
+  // The question: a long one wraps and is drawn in a quote box ("│ D1: Where should…" / "│ …the rest", seen 2026-11-02).
+  const start = rest.findIndex((l) => l.trim()), titleLines: string[] = [];
+  for (let i = Math.max(start, 0); i < rest.length && rest[i].trim(); i++) titleLines.push(rest[i].replace(/^\s*│\s?/, "").trim());
+  const title = titleLines.join(" ").trim();
   const rows: PickerRow[] = [], answers: string[] = [];
   for (const l of rest) {
     // Rows start at column 0 ("❯ " or two spaces); descriptions and wrapped lines are indented further.
