@@ -86,6 +86,12 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
 - `Ask.questions` (asks.ts) carries the whole open picker, so the "Waiting on you" card can draw the same form (`askFormHtml`);
   its submit finds the session from the card's `data-sid`. Cards are kept per session (`renderNeeds`): only `.ntop` is redrawn,
   so a half-filled form survives the polls.
+- Numbered questions without a "?" ("2. How many installs so far (KR1.2).") count as questions when they start with a
+  question word (`ASKS`) or sit under a fill-in heading (`FILL_CUE`); 2+ of them give `Ask.fill` (a text box each in the
+  card), never number buttons. Typed text is one line (control chars become spaces), so answers go out as "Answers: 1. …; 3. …".
+- `settlePending`: a session's chat is only its last 80 lines, so a busy session can push your message out of the window.
+  When even the oldest returned line is newer than its `typedAt`, it counts as taken (2026-11-04, a mid-turn message stayed
+  "Not picked up yet" for hours).
 - `drivePicker` only moves down, verifies the whole question (title, every label, boxes, the one highlighted row, other tabs'
   ☐/☒) after every key, and stops on the first surprise (409 "Couldn't answer automatically…", `detail` says which step).
   Tests: `test/fake-picker.ts` is a scripted picker drawn like the real captures; run as a script it's a fake `tmux`

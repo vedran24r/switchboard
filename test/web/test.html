@@ -149,6 +149,13 @@ const HELPERS = () => {
     return "ok";
   });
 
+  await check("delivery: a message older than the whole chat window (a busy session wrote 80+ lines since) counts as taken, not 'not picked up'", A, () => {
+    const t = Date.now() - 600_000, list = [{ text: "go ahead with Sam's plan", at: t, typedAt: t, status: "sent" }, { text: "fresh one", at: Date.now(), typedAt: Date.now() - 200_000, status: "sent" }];
+    const chat = Array.from({ length: 80 }, (_, i) => ({ id: `w${i}`, role: "tool", text: "Bash", at: t + 60_000 + i * 1000 }));
+    settlePending(list, chat, false);
+    T.eq(list.map((p) => [p.text, p.status]), [["fresh one", "stale"]], "old one settled, a recent lost one still flagged");
+    return "ok";
+  });
   await check("hide message: × removes a line from view only, remembered", A, async () => {
     const id = state.dispatcher.chat[0].id, el = mainLog.els.get(id);
     T.assert(el, "line exists"); el.querySelector(".hide").click(); await T.sleep(50);
@@ -960,6 +967,52 @@ const HELPERS = () => {
       r.posted = posts; r.note = form.querySelector(".anote").textContent;
       T.eq(r, { buttons: ["Answer here", "Open"], form: ["ShipShip it now?", "ChecksWhich checks? pick any"], wider: true, kept: true,
         posted: [{ sessionId: id, questions: ["Ship it now?", "Which checks?"], answers: [{ picks: [1] }, { picks: [0], other: "lint" }] }], note: "Answered ✓" }, "card form");
+    } finally { window.fetch = real; }
+    return "ok";
+  });
+  await check("desk: one message sent to several sessions → a 'Sent to N' card with each one's status; a row opens it; × hides it", D, async () => {
+    const saved = state.dispatcher, t0 = Date.now() - 60_000, z = T.node("Zomb").s;
+    const at = Math.min(t0, z.lastReplyAt - 1000);
+    state = { ...state, dispatcher: { ...saved, chat: [...saved.chat, { id: "t-fan-you", role: "you", text: "check all three for Sam", at: at - 10 }],
+      routes: [...saved.routes, ...["Beta", "Waiting", "Zomb", "Nobody"].map((target, i) => ({ id: `t-fan-${i}`, at, kind: "send", target, text: `look at ABC-12 (${target})` }))] } };
+    try {
+      renderFanout();
+      const rows = [...$("fanout").querySelectorAll(".frow")];
+      const r = { head: $("fanout").querySelector(".fh").firstChild.textContent, sum: $("fanout").querySelector(".fh span").textContent,
+        rows: rows.map((x) => [x.querySelector(".chip").textContent.replace(/^\S+\s/, ""), x.querySelector(".fst").textContent]) };
+      rows[2].click(); r.opened = selected === z.sessionId;
+      $("fanout").querySelector("[data-fhide]").click(); r.hidden = $("fanout").innerHTML === "";
+      renderFanout(); r.staysHidden = $("fanout").innerHTML === "";
+      T.eq(r, { head: "Sent to 4 sessions", sum: "1 replied · 1 waiting on you · 1 working",
+        rows: [["Beta", "⏳ working"], ["Waiting", "❓ waiting on you"], ["Zomb", "✅ replied"], ["Nobody", "ended"]], opened: true, hidden: true, staysHidden: true }, "fan-out");
+    } finally { state = { ...state, dispatcher: saved }; fanoutHidden = ""; renderFanout(); }
+    return "ok";
+  });
+  await check("desk: numbered questions in a reply get a text box each in the card; the answers go out as one line", D, async () => {
+    const real = window.fetch, posts = [], id = T.node("Waiting").s.sessionId;
+    const fill = ["1. How many QA people Acme has (KR2.1).", "2. How many installs so far (KR1.2).", "3. Does auto-QA run anywhere besides ABC-12?"];
+    window.fetch = async (u, o) => {
+      if (String(u) === "/api/session/say") { posts.push(JSON.parse(o.body)); return new Response(JSON.stringify({ sent: true }), { headers: { "content-type": "application/json" } }); }
+      const res = await real(u, o);
+      if (!String(u).startsWith("/api/state")) return res;
+      const d = await res.json(); d.sessions = d.sessions.map((s) => s.sessionId === id ? { ...s, ask: { kind: "question", options: [], note: "It asked 3 questions", fill } } : s);
+      return new Response(JSON.stringify(d), { headers: { "content-type": "application/json" } });
+    };
+    try {
+      const card = () => document.querySelector(`#needs .ncard[data-sid="${id}"]`);
+      for (let i = 0; i < 40 && !card()?.querySelector("[data-nform]"); i++) await T.sleep(100);
+      const r = { q: card().querySelector(".nq").textContent, buttons: [...card().querySelectorAll(".nbtns button")].map((b) => b.textContent) };
+      card().querySelector("[data-nform]").click();
+      const boxes = [...card().querySelectorAll("[data-fi]")];
+      r.labels = [...card().querySelectorAll(".afill span")].map((x) => x.textContent);
+      card().querySelector(".asubmit").click(); r.empty = card().querySelector(".anote").textContent;
+      boxes[0].value = "5, about 3 attend"; boxes[2].value = "no";
+      card().querySelector(".asubmit").click();
+      for (let i = 0; i < 30 && !posts.length; i++) await T.sleep(100);
+      await T.sleep(50);
+      r.posted = posts.map((p) => [p.sessionId === id, p.text]); r.note = card().querySelector(".anote").textContent;
+      T.eq(r, { q: "It asks 3 questions.", buttons: ["Answer here", "Open"], labels: fill, empty: "Write at least one answer.",
+        posted: [[true, "Answers: 1. 5, about 3 attend; 3. no"]], note: "Sent ✓" }, "fill-in card");
     } finally { window.fetch = real; }
     return "ok";
   });

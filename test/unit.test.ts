@@ -167,6 +167,11 @@ test("asks: answers that make sense (real shapes: either/or, numbered questions,
   // Several open questions: no buttons that just repeat them, a note instead.
   const several = askFromText("Before I install anything, please confirm:\n1. Is Tailscale allowed?\n2. Are launchd agents allowed?\n3. Which account?")!;
   assert.deepEqual([several.options, several.note], [[], "It asked 3 questions: answer them in the reply box."]);
+  assert.deepEqual(several.fill, ["1. Is Tailscale allowed?", "2. Are launchd agents allowed?", "3. Which account?"]);
+  // Fill-in questions without a "?" (a real shape, names swapped): a numbered block under "Numbers to fill in", followed by
+  // a "Your call" list. Each item is answered in its own words, never offered as a button that sends its number.
+  const fillIn = askFromText("Everything else is ready to paste.\n\n**Numbers to fill in (`[?]`):**\n1. How many QA people Acme has, and how many attend the guild (KR2.1).\n2. How many installs so far (KR1.2).\n3. How many Acme projects exist, for the audit in KR2.4. \"Month 1\" works if you don't know.\n4. Does auto-QA per PR already run anywhere besides ABC-12? If so, change the baseline.\n\n**Your call:**\n- **4 objectives may be too many.** Fold O4 into O3 if your manager wants 3.\n- **KR4.4 is my suggestion.** Drop it if it doesn't fit.")!;
+  assert.deepEqual([fillIn.options, fillIn.fill?.length, fillIn.fill?.[1]], [[], 4, "2. How many installs so far (KR1.2)."]);
   assert.deepEqual(sends("Should I wait 10 minutes or so?"), ["yes", "no"], "'or so' isn't a choice");
   assert.deepEqual(sends("Should I keep it or not?"), ["yes", "no"]);
   assert.deepEqual(sends("Rebase onto main, or merge main in?"), ["Rebase onto main", "Merge main in"]);

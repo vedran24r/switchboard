@@ -81,6 +81,11 @@ Three columns: the Switchboard chat (drag its right edge to resize), the session
   - **Waiting on you:** a card at the top for each session that asks you something, with its question and its answer
     buttons (Yes / No, the numbers, a picker's options). A picker with several questions (or "pick any") gets **Answer
     here**: the same form as in the open session, right in the card. **Open** opens the session on the right.
+  - **Numbered questions** in a session's reply ("1. How many…", "2. Does X run…?") get **Answer here** too: a box per
+    question, and **Send answers** types them into it as one line ("Answers: 1. …; 3. …", blanks left out).
+  - **Sent to N sessions:** when Switchboard sends your last message to two or more sessions, a card lists them with how
+    each is doing now (⏳ working, ❓ waiting on you, ✅ replied with how its reply starts, ended). A row opens that
+    session; × hides the card until your next message.
   - **`@name message`** sends the message straight to that session as your own input, not through Switchboard. Names
     are suggested as you type `@…`; a name that matches no session goes to Switchboard unchanged.
 - **Session list** (middle): waiting on you first, then unread, working, idle, stale. Each row has the session's icon and

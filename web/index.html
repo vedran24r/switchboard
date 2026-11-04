@@ -430,9 +430,25 @@
   .ncard .nbtns button.go { border-color: var(--tint); }
   .ncard .nnote { font-size: 12px; color: var(--muted); margin-top: 4px; } .ncard .nnote.bad { color: var(--bad, #e66); } .ncard .nnote:empty { display: none; }
   .ncard .nform:empty { display: none; }
+  .aform .afill { display: grid; gap: 3px; margin-top: 6px; font-size: 13px; } .aform .afill input { width: 100%; font: inherit; font-size: 13px; padding: 4px 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .aform.sent .afill input { opacity: .6; pointer-events: none; }
   .ncard .nform .aform { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
   /* While a card's form is open the cards may take more of the column; the chat gets its room back after. */
   body.deck #needs.answering { max-height: 64vh; }
+  body.deck #needs.answering + #fanout { display: none; } /* back once the form is closed */
+  /* "Sent to 3 sessions": where your last message went, and how each of them is doing. */
+  #fanout { display: none; }
+  body.deck #fanout:not(:empty) { display: block; padding: 6px 12px 8px; border-bottom: 1px solid var(--line); font-size: 12.5px; max-height: 24vh; overflow-y: auto; }
+  #fanout .fh { display: flex; gap: 8px; align-items: baseline; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  #fanout .fh span { font-weight: 500; letter-spacing: 0; text-transform: none; }
+  #fanout .fx { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 15px; line-height: 1; padding: 0 2px; }
+  #fanout .frow { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 8px; align-items: center; width: 100%; margin-top: 4px; padding: 3px 6px;
+    border: 0; border-left: 3px solid var(--tint); border-radius: 6px; background: color-mix(in srgb, var(--tint) 8%, transparent); text-align: left; color: var(--ink); }
+  #fanout .frow:hover { background: color-mix(in srgb, var(--tint) 16%, transparent); }
+  #fanout .frow .chip { pointer-events: none; }
+  #fanout .fst { font-weight: 600; white-space: nowrap; } #fanout .fst.ask { color: var(--needs); } #fanout .fst.done { color: #2fbf71; } #fanout .fst.gone { color: var(--muted); }
+  #fanout .fln { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* "@name message" in the main box goes straight to that session: the suggestions under the box. */
   #atlist { display: none; grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); align-items: center; }
   #atlist.on { display: flex; }
@@ -490,6 +506,7 @@
   </header>
   <div id="notice"></div>
   <div id="needs" aria-label="Waiting on you"></div>
+  <div id="fanout" aria-label="Where your last message went"></div>
   <button type="button" class="newpill" id="newpill" hidden>New messages ↓</button>
   <div id="log"><div class="hint">Talk or type. Each idea goes to the session it belongs to, or a new one. @name sends straight to one session.</div></div>
   <form id="composer">
@@ -1014,8 +1031,12 @@ const squash = (t) => t.replace(/\s+/g, " ").trim();
 const COMMAND_MS = 15_000;
 const STALE_MS = 120_000;
 function settlePending(list, chat, busy) {
+  // The chat is only the last lines (80 for a session). When even the oldest of them is newer than the moment a message
+  // was typed in, a busy session has moved on past it: it was taken, it just isn't in the window any more.
+  const oldest = chat.reduce((m, c) => Math.min(m, c.at || Infinity), Infinity);
   for (let i = list.length - 1; i >= 0; i--) {
     const p = list[i];
+    if (p.typedAt && chat.length >= 40 && oldest > p.typedAt + 1000) { list.splice(i, 1); saveOutbox(); continue; }
     if (chat.some((c) => (c.role === "you" || c.role === "shell") && c.at >= p.at - 5000 && squash(c.text).includes(squash(p.text)))) { list.splice(i, 1); saveOutbox(); continue; }
     // `!cmd` and /commands: some (/clear, /exit…) never show up in the chat. Once the session is idle and it's still
     // missing, say it went out instead of looking queued forever.
@@ -1030,6 +1051,38 @@ function renderChat(d) {
   const items = [...(d.chat || []), ...pendingItems(pendingSays)];
   if (items.length) mainLog.sync(items);
 }
+
+/* Fan-out: the sessions Switchboard sent your last message to (two or more), each with how it's doing now:
+   working, waiting on you, replied (with how its reply starts), or gone. A row opens that session. */
+let fanoutHidden = "";
+function renderFanout() {
+  const box = $("fanout"); if (!box) return;
+  const d = state.dispatcher || {}, chat = d.chat || [];
+  const you = [...chat].reverse().find((c) => c.role === "you");
+  const since = you ? you.at : 0, latest = new Map();
+  for (const r of d.routes || []) if (r.at >= since && Date.now() - r.at < 2 * 3600_000) latest.set(r.target.toLowerCase(), r);
+  const routes = [...latest.values()], key = `${since}:${routes.map((r) => r.id).join(",")}`;
+  if (!deck || routes.length < 2 || fanoutHidden === key) { if (box.innerHTML) box.innerHTML = ""; box.dataset.html = ""; return; }
+  const counts = { done: 0, ask: 0, work: 0 };
+  const rows = routes.map((r) => {
+    const n = byName(r.target), s = n?.s, look = lookOf(r.target);
+    let st, cls = "", line = r.text;
+    if (!s) { st = r.kind === "spawn" ? "starting…" : "ended"; cls = r.kind === "spawn" ? "" : "gone"; }
+    else if (askOf(s)) { st = "❓ waiting on you"; cls = "ask"; counts.ask++; }
+    else if (s.state === "working") { st = "⏳ working"; counts.work++; line = s.doing || line; }
+    else if (s.lastReplyAt > r.at) { st = "✅ replied"; cls = "done"; counts.done++; line = s.lastReply || s.doing || line; }
+    else st = "sent";
+    return `<button type="button" class="frow" data-fsid="${esc(s?.sessionId || "")}" style="--tint:${esc(look.color)}" title="${esc(r.text)}">${chipHtml(look)}<span class="fst ${cls}">${esc(st)}</span><span class="fln">${esc(clip(String(line).replace(/\s+/g, " "), 160))}</span></button>`;
+  });
+  const sum = [counts.done && `${counts.done} replied`, counts.ask && `${counts.ask} waiting on you`, counts.work && `${counts.work} working`].filter(Boolean).join(" · ");
+  const html = `<div class="fh">Sent to ${routes.length} sessions<span>${esc(sum)}</span><button type="button" class="fx" data-fhide="${esc(key)}" title="Hide until your next message" aria-label="Hide">×</button></div>${rows.join("")}`;
+  if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+}
+$("fanout").addEventListener("click", (e) => {
+  const hide = e.target.closest("[data-fhide]");
+  if (hide) { fanoutHidden = hide.dataset.fhide; return renderFanout(); }
+  const row = e.target.closest(".frow"); if (row?.dataset.fsid && nodes.has(row.dataset.fsid)) select(row.dataset.fsid);
+});
 
 function renderDispatcher(d) {
   const notice = { html: "" };
@@ -1341,7 +1394,10 @@ $("atlist").addEventListener("click", (e) => {
    blocked folder opens that session next to it. */
 /* Each card is kept by session: only its top part is redrawn when it changes, so a half-filled form (the picker's
    questions, in the card itself) and the last "Sent:" note survive the polls. */
-const formable = (s, ask) => !s.askBlocked && ask.picker && ask.questions?.length && !ask.options.length;
+const formable = (s, ask) => !s.askBlocked && ((ask.picker && ask.questions?.length && !ask.options.length) || ask.fill?.length >= 2);
+// Numbered questions from its last message: a text box each; "Send answers" types them as one line of your own.
+const fillFormHtml = (fill) => `<form class="aform ffill">${fill.map((q, i) => `<label class="afill"><span>${esc(q)}</span><input type="text" data-fi="${i}" maxlength="500" placeholder="your answer"></label>`).join("")}
+  <div class="arow"><button type="submit" class="asubmit">Send answers</button><span class="anote" role="status"></span></div></form>`;
 function renderNeeds(sorted) {
   const box = $("needs"); if (!box) return;
   const waiting = deck ? sorted.filter((s) => askOf(s)) : [];
@@ -1366,18 +1422,19 @@ function renderNeeds(sorted) {
       card.dataset.html = top; card.querySelector(".ntop").innerHTML = top;
       if (card.classList.contains("formopen")) card.querySelector("[data-nform]").textContent = "Hide the form";
     }
-    const qkey = formable(s, ask) ? JSON.stringify(ask.questions) : "";
+    const qkey = formable(s, ask) ? JSON.stringify(ask.fill || ask.questions) : "";
     if (card.dataset.q !== qkey) { card.dataset.q = qkey; card.querySelector(".nform").innerHTML = ""; card.classList.remove("formopen"); const b = card.querySelector("[data-nform]"); if (b) b.textContent = "Answer here"; }
     if (s.askBlocked) card.querySelector(".nnote").textContent = "Blocked folder: answer it in its own terminal.";
   }
   box.classList.toggle("answering", !!box.querySelector(".ncard.formopen"));
 }
-const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
+// Cut long text at a word, never mid-word.
+const clip = (t, n) => (t.length > n ? t.slice(0, n).replace(/\s+\S*$/, "") + "…" : t);
 function needsTop(s, ask) {
   const look = lookOf(s.name);
   // The question itself: the picker's, else the last sentence of its reply that asks something.
   const asked = (s.lastReply || "").replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).filter((x) => /\?\s*\W*$/.test(x)).at(-1);
-  const q = ask.question || asked || ask.note || clip((s.lastReply || "").replace(/\s+/g, " "), 220) || "It's waiting for you.";
+  const q = ask.question || (ask.fill ? `It asks ${ask.fill.length} questions.` : asked || ask.note) || clip((s.lastReply || "").replace(/\s+/g, " "), 220) || "It's waiting for you.";
   const buttons = s.askBlocked ? "" : ask.options.map((o, i) => `<button type="button" data-nq="${i}" title="${o.key ? `Presses ${esc(o.key)} in its terminal` : `Sends “${esc(o.send)}”`}">${esc(o.label)}</button>`).join("");
   const here = formable(s, ask) ? `<button type="button" class="go" data-nform>Answer here</button>` : "";
   const open = here ? "Open" : ask.picker && !ask.options.length ? "Answer the form →" : buttons ? "Open" : "Answer →";
@@ -1392,7 +1449,7 @@ $("needs").addEventListener("click", async (e) => {
     const ask = askOf(n.s), box = card.querySelector(".nform");
     if (!formable(n.s, ask)) return;
     const open = !card.classList.contains("formopen");
-    if (open && !box.innerHTML) box.innerHTML = askFormHtml({ id: `need-${n.s.sessionId}`, questions: ask.questions });
+    if (open && !box.innerHTML) box.innerHTML = ask.fill ? fillFormHtml(ask.fill) : askFormHtml({ id: `need-${n.s.sessionId}`, questions: ask.questions });
     card.classList.toggle("formopen", open); box.hidden = !open; btn.textContent = open ? "Hide the form" : "Answer here";
     $("needs").classList.toggle("answering", !!$("needs").querySelector(".ncard.formopen"));
     if (open) box.querySelector("input")?.focus({ preventScroll: true }), card.scrollIntoView({ block: "nearest" });
@@ -1999,6 +2056,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("submit", async (e) => {
   const form = e.target.closest?.(".aform"); if (!form) return;
   e.preventDefault();
+  if (form.classList.contains("ffill")) return sendFill(form);
   const card = form.closest(".ncard");
   const n = nodes.get(card ? card.dataset.sid : popup.id), c = card ? { questions: n && askOf(n.s)?.questions } : popup.log?.items.get(form.dataset.ask);
   if (!n || !c?.questions || n.s.askBlocked || form.classList.contains("busy") || form.classList.contains("sent")) return;
@@ -2021,6 +2079,19 @@ document.addEventListener("submit", async (e) => {
     askNote(form, err.message || "Couldn't answer automatically, use the Terminal tab", true, !err.net);
   } finally { form.classList.remove("busy"); }
 });
+
+async function sendFill(form) {
+  const card = form.closest(".ncard"), n = card && nodes.get(card.dataset.sid), fill = n && askOf(n.s)?.fill;
+  if (!fill || n.s.askBlocked || form.classList.contains("busy")) return;
+  const parts = [...form.querySelectorAll("[data-fi]")].map((x) => [fill[Number(x.dataset.fi)].match(/^\d+/)?.[0], x.value.trim()]).filter(([, a]) => a);
+  if (!parts.length) return askNote(form, "Write at least one answer.", true);
+  form.classList.add("busy"); form.querySelector(".asubmit").disabled = true; askNote(form, "Sending…");
+  try {
+    await post("/api/session/say", { sessionId: n.s.sessionId, text: "Answers: " + parts.map(([k, a]) => `${k}. ${a}`).join("; "), quick: true });
+    form.classList.add("sent"); askNote(form, "Sent ✓");
+  } catch (err) { form.querySelector(".asubmit").disabled = false; askNote(form, `Not sent: ${err.message}`, true); }
+  finally { form.classList.remove("busy"); }
+}
 
 async function pollPopup() {
   const id = popup.id;
@@ -2324,7 +2395,7 @@ async function poll() {
   // Each step on its own: one failing part must never stop the page from refreshing.
   try { state = await (await request("/api/state", { cache: "no-store" }, 8000)).json(); setOnline(true); if (firstLoad) retryUnsent(); }
   catch { setOnline(false); $("status").textContent = "no connection to the Mac, retrying…"; setTimeout(poll, 2000); return; }
-  for (const step of [() => updateSessions(state.sessions), () => renderDispatcher(state.dispatcher), () => updateRoutes(state.dispatcher.routes || []), () => updatePulses(state.pulses || []), () => renderTrustWaits(state.trustWaits || [])]) {
+  for (const step of [() => updateSessions(state.sessions), () => renderDispatcher(state.dispatcher), () => updateRoutes(state.dispatcher.routes || []), () => updatePulses(state.pulses || []), () => renderTrustWaits(state.trustWaits || []), renderFanout]) {
     try { step(); } catch (e) { console.error(e); }
   }
   firstLoad = false;

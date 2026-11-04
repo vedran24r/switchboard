@@ -15,13 +15,18 @@ export interface AskOption { label: string; send?: string; key?: string }
 /** `picker`: Claude Code's AskUserQuestion picker (from the transcript, or seen on its screen). `questions`: the whole
  * picker from the transcript, so the page can draw the answer form in its "Waiting on you" card too. */
 export interface PickerQuestion { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
-export interface Ask { kind: "permission" | "question"; options: AskOption[]; note?: string; question?: string; picker?: boolean; questions?: PickerQuestion[] }
+/** `fill`: numbered questions from its last message ("1. How many…", "2. Does X run…?"), each answered in your own words. */
+export interface Ask { kind: "permission" | "question"; options: AskOption[]; note?: string; question?: string; picker?: boolean; questions?: PickerQuestion[]; fill?: string[] }
 
 const clean = (s: string) => s.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
 /** Button text: at most `n` characters, cut at a word. */
 const short = (s: string, n = 48) => s.length <= n ? s : s.slice(0, n).replace(/\s+\S*$/, "") + "…";
 const NUMBERED = /^(?:[-*•]\s*)?(\d{1,2})[.)]\s+(.{2,200})$/;
 const CHOICE_CUE = /\?|\b(which|choose|pick|option|options|select|prefer|want me to)\b/i;
+/** A numbered item that asks something even without a "?": "How many installs so far (KR1.2)." */
+const ASKS = /^(?:\*\*)?(how|what|which|who|whom|when|where|why|does|do|did|is|are|was|were|can|could|should|would|will|has|have)\b/i;
+/** The line before a numbered block saying the items are for you to fill in: "Numbers to fill in:", "Questions for you:". */
+const FILL_CUE = /\b(fill in|to fill|questions? for you|need from you|only you know|please answer|answer these|open questions)\b/i;
 /** Words "reply X" may name without quotes; anything else needs quotes ("Here's a reply you could post" isn't an answer). */
 const BARE_ANSWER = /^(\d{1,2}|[a-d]|yes|no|y|n|go|ok|okay|continue|proceed|skip|stop|cancel|both|all|none|done)$/i;
 /** Lead-ins dropped from the two sides of "A, or B?" so the button reads as the answer. */
@@ -58,12 +63,15 @@ export function askFromText(text: string | undefined): Ask | undefined {
   // Items that are questions themselves ("2. Will X allow Y?") are things to answer, not answers to pick.
   let end = -1;
   for (let i = lastLines.length - 1; i >= 0 && end < 0; i--) if (NUMBERED.test(lastLines[i])) end = i;
-  let numberedQuestions = 0;
+  let numberedQuestions = 0, fill: string[] = [];
   if (end >= 0) {
     let start = end;
     while (start > 0 && NUMBERED.test(lastLines[start - 1])) start--;
     const items = lastLines.slice(start, end + 1).map((l) => l.match(NUMBERED)!);
-    numberedQuestions = items.filter((m) => /\?\s*$/.test(clean(m[2]))).length;
+    const fillIn = FILL_CUE.test(lastLines[start - 1] ?? "");
+    const asking = items.filter((m) => fillIn || /\?\s*$/.test(clean(m[2])) || ASKS.test(clean(m[2])));
+    numberedQuestions = asking.length;
+    if (numberedQuestions >= 2) fill = items.map((m) => `${m[1]}. ${clean(m[2])}`);
     // The cue is the line right before ("Which one?", "Options:") or right after naming the numbers ("Which one?",
     // "Pick a number"). A question further down doesn't make a list of findings into a menu.
     const cue = CHOICE_CUE.test(lastLines[start - 1] ?? "") || /^options?\s*:/i.test(lastLines[start - 1] ?? "") ||
@@ -89,7 +97,7 @@ export function askFromText(text: string | undefined): Ask | undefined {
     add({ label: "Yes", send: "yes" }); add({ label: "No", send: "no" });
   }
   if (!options.length && numberedQuestions >= 2)
-    return { kind: "question", options: [], note: `It asked ${numberedQuestions} questions: answer them in the reply box.` };
+    return { kind: "question", options: [], note: `It asked ${numberedQuestions} questions: answer them in the reply box.`, fill };
   if (!options.length && !endsWithQuestion && !waiting) return;
   return { kind: "question", options: options.slice(0, 8) };
 }
