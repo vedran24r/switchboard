@@ -477,6 +477,18 @@
   body.deck aside#panel:not(.open)::before { content: "Pick a session on the left."; }
   body.deck aside .close, body.deck aside .grow, body.deck aside .pinpop, body.deck aside .replyhere { display: none; }
   body.deck aside h2 { margin-right: 0; font-size: 18px; }
+  .phead { display: contents; }
+  /* Desk: name, status, actions and Details on one line; Details opens as a dropdown over the chat. */
+  body.deck .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 6px; }
+  body.deck aside .phead h2 { margin: 0; font-size: 16px; flex: none; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body.deck aside .phead #p-meta { flex: 1 1 160px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body.deck .phead #p-agents, body.deck .phead .activetag { order: 9; flex-basis: 100%; }
+  body.deck .phead .pactions { margin: 0; gap: 4px; }
+  body.deck .phead .pactions button { padding: 2px 9px; font-size: 12px; }
+  body.deck .phead #p-details { margin: 0; position: relative; }
+  body.deck .phead #p-details summary { padding: 3px 4px; }
+  body.deck .phead #p-details #p-info { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; width: min(380px, 60vw); max-height: 50vh; overflow-y: auto;
+    padding: 4px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
   body.deck aside .plog { font-size: 14.5px; }
   body.deck aside .pcomposer textarea { font-size: 14.5px; }
   /* "Needs you": every session waiting on you, at the top of the Switchboard chat, answerable right there. */
@@ -2031,6 +2043,7 @@ function clickNode(n) {
 panel.addEventListener("pointerenter", () => clearTimeout(closeTimer));
 panel.addEventListener("pointerleave", scheduleClose);
 panel.addEventListener("pointerdown", () => setSticky(true));
+document.addEventListener("pointerdown", (e) => { const d = $("p-details"); if (deck && d?.open && !d.contains(e.target)) d.open = false; });
 document.addEventListener("pointerdown", (e) => {
   if (!selected || !popupPinned || deck) return;
   if (panel.contains(e.target) || e.target.closest?.(".node")) return;
@@ -2070,12 +2083,14 @@ function select(id, { auto = false, hover = false } = {}) {
     <button class="close" onclick="closePopup()" aria-label="Close"><span>×</span></button>
     <button class="grow" type="button" onclick="panel.classList.toggle('big');this.textContent=panel.classList.contains('big')?'Smaller':'Bigger'" title="Make this popup bigger">Bigger</button>
     <button class="pinpop" type="button" id="p-pin" onclick="event.stopPropagation();setSticky(!popupPinned)" title="Keep this popup open; hovering others and new routes won't switch it">Pin</button>
+    <div class="phead">
     <h2 id="p-name"></h2>
     <div class="label" id="p-meta"></div>
     <div id="p-agents"></div>
     <div class="pactions" id="p-actions"></div>
     ${auto ? `<div class="activetag">Active: Switchboard just sent it a message</div>` : ""}
-    <details id="p-details"${detailsOpen ? " open" : ""} ontoggle="setDetailsOpen(this.open)"><summary>Details</summary><div id="p-info"></div></details>
+    <details id="p-details"${detailsOpen && !deck ? " open" : ""} ontoggle="deck || setDetailsOpen(this.open)"><summary>Details</summary><div id="p-info"></div></details>
+    </div>
     <div class="pview" id="p-view"><button type="button" data-view="chat">Chat</button><button type="button" data-view="term" title="What its terminal shows now (read-only)">Terminal</button><button type="button" data-view="changes" title="Files changed in its folder (git), and their diffs">Changes</button><button type="button" class="tz" data-tz="-1" title="Smaller terminal text">A−</button><button type="button" class="tz" data-tz="1" title="Bigger terminal text">A+</button></div>
     <div class="plog" id="p-log"><div class="hint">Loading…</div></div>
     <pre class="pterm" id="p-term" aria-label="Terminal (read-only)"></pre>
