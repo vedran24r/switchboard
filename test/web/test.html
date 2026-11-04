@@ -256,6 +256,16 @@ const HELPERS = () => {
     return "ok";
   });
 
+  await check("inline code in the open session's chat stays inline (the panel's block <code> style is for its own rows)", A, async () => {
+    select(T.node("Beta").s.sessionId); await T.sleep(100);
+    const div = document.createElement("div"); div.className = "msg switchboard";
+    div.innerHTML = `<div class="body">${md("**Numbers to fill in (`[?]`):**")}</div>`;
+    $("p-log").append(div);
+    const display = getComputedStyle(div.querySelector("code")).display; div.remove();
+    T.eq(display, "inline");
+    return "ok";
+  });
+
   // ---- session sheet: terminal view, quick keys, standing chips. The test server's tmux wrapper answers for
   // pk-claude-beta (test/browser.ts); nothing reaches a real tmux server. ----
   await check("terminal view: Chat / Terminal toggle shows the pane as escaped coloured text, monospace, pinned to the bottom", A, async () => {
