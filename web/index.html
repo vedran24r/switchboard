@@ -143,7 +143,7 @@
   .askcard.done .aqtitle { color: var(--muted); }
   .askcard .aq + .aq { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
   .askcard .aqq { font-weight: 600; }
-  .askcard .aqh { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 6px; background: var(--soft); color: var(--muted); margin-right: 6px; }
+  .askcard .aqh, .aform .aqh { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 6px; background: var(--soft); color: var(--muted); margin-right: 6px; }
   .askcard ol { margin: 4px 0 0; padding-left: 22px; font-size: 13px; }
   .askcard li span { color: var(--muted); }
   .askcard li.picked b { color: var(--accent); }
@@ -428,7 +428,11 @@
   .ncard .nbtns { display: flex; flex-wrap: wrap; gap: 6px; }
   .ncard .nbtns button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 7px; padding: 3px 10px; font-size: 12.5px; }
   .ncard .nbtns button.go { border-color: var(--tint); }
-  .ncard .nnote { font-size: 12px; color: var(--muted); margin-top: 4px; } .ncard .nnote.bad { color: var(--bad, #e66); }
+  .ncard .nnote { font-size: 12px; color: var(--muted); margin-top: 4px; } .ncard .nnote.bad { color: var(--bad, #e66); } .ncard .nnote:empty { display: none; }
+  .ncard .nform:empty { display: none; }
+  .ncard .nform .aform { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+  /* While a card's form is open the cards may take more of the column; the chat gets its room back after. */
+  body.deck #needs.answering { max-height: 64vh; }
   /* "@name message" in the main box goes straight to that session: the suggestions under the box. */
   #atlist { display: none; grid-column: 1 / -1; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--muted); align-items: center; }
   #atlist.on { display: flex; }
@@ -700,7 +704,7 @@ function lookFor(c, identity) {
   if (c.session) return lookOf(c.session);
   return c.role === "notice" ? null : SWITCHBOARD_LOOK;
 }
-/* The question form (popup only, never for blocked folders): one block per question, radio buttons or tick boxes, an
+/* The question form (in the open session and in its "Waiting on you" card, never for blocked folders): one block per question, radio buttons or tick boxes, an
    Other field, one Submit. Submit posts to /api/session/answer, which presses the keys in the real picker (picker.ts). */
 function askFormHtml(c) {
   const id = esc(c.id);
@@ -1335,25 +1339,65 @@ $("atlist").addEventListener("click", (e) => {
 /* "Needs you": a card per session waiting on you (any question, permission or picker), at the top of the chat. Simple
    choices are answered right on the card (the same keys/replies as the session's own quick buttons); a picker form or a
    blocked folder opens that session next to it. */
+/* Each card is kept by session: only its top part is redrawn when it changes, so a half-filled form (the picker's
+   questions, in the card itself) and the last "Sent:" note survive the polls. */
+const formable = (s, ask) => !s.askBlocked && ask.picker && ask.questions?.length && !ask.options.length;
 function renderNeeds(sorted) {
   const box = $("needs"); if (!box) return;
   const waiting = deck ? sorted.filter((s) => askOf(s)) : [];
-  const html = waiting.length ? `<div class="nh">Waiting on you · ${waiting.length}</div>` + waiting.map((s) => {
-    const ask = askOf(s), look = lookOf(s.name);
-    // The question itself: the picker's, else the last sentence of its reply that asks something.
-    const asked = (s.lastReply || "").replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).filter((x) => /\?\s*\W*$/.test(x)).at(-1);
-    const q = ask.question || asked || ask.note || short((s.lastReply || "").replace(/\s+/g, " "), 220) || "It's waiting for you.";
-    const buttons = s.askBlocked ? "" : ask.options.map((o, i) => `<button type="button" data-nq="${i}" title="${o.key ? `Presses ${esc(o.key)} in its terminal` : `Sends “${esc(o.send)}”`}">${esc(o.label)}</button>`).join("");
-    const open = ask.picker && !ask.options.length ? "Answer the form →" : buttons ? "Open" : "Answer →";
-    return `<div class="ncard" data-sid="${esc(s.sessionId)}" style="--tint:${esc(look.color)}">${chipHtml(look)} <span class="label">${esc(ago(s.lastActivity))} ago</span>
-      <div class="nq">${esc(short(q, 260))}</div><div class="nbtns">${buttons}<button type="button" class="go" data-nopen>${open}</button></div>
-      ${s.askBlocked ? `<div class="nnote">Blocked folder: answer it in its own terminal.</div>` : `<div class="nnote" role="status"></div>`}</div>`;
-  }).join("") : "";
-  if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+  if (!waiting.length) { if (box.innerHTML) { box.innerHTML = ""; box.classList.remove("answering"); } return; }
+  let head = box.querySelector(".nh");
+  if (!head) head = box.appendChild(Object.assign(document.createElement("div"), { className: "nh" }));
+  head.textContent = `Waiting on you · ${waiting.length}`;
+  const keep = new Set(waiting.map((s) => s.sessionId));
+  for (const c of box.querySelectorAll(".ncard")) if (!keep.has(c.dataset.sid)) c.remove();
+  let prev = head;
+  for (const s of waiting) {
+    let card = box.querySelector(`.ncard[data-sid="${CSS.escape(s.sessionId)}"]`);
+    if (!card) {
+      card = document.createElement("div"); card.className = "ncard"; card.dataset.sid = s.sessionId;
+      card.innerHTML = `<div class="ntop"></div><div class="nform"></div><div class="nnote" role="status"></div>`;
+    }
+    if (prev.nextElementSibling !== card) prev.after(card);
+    prev = card;
+    const ask = askOf(s), top = needsTop(s, ask);
+    card.style.setProperty("--tint", lookOf(s.name).color);
+    if (card.dataset.html !== top) {
+      card.dataset.html = top; card.querySelector(".ntop").innerHTML = top;
+      if (card.classList.contains("formopen")) card.querySelector("[data-nform]").textContent = "Hide the form";
+    }
+    const qkey = formable(s, ask) ? JSON.stringify(ask.questions) : "";
+    if (card.dataset.q !== qkey) { card.dataset.q = qkey; card.querySelector(".nform").innerHTML = ""; card.classList.remove("formopen"); const b = card.querySelector("[data-nform]"); if (b) b.textContent = "Answer here"; }
+    if (s.askBlocked) card.querySelector(".nnote").textContent = "Blocked folder: answer it in its own terminal.";
+  }
+  box.classList.toggle("answering", !!box.querySelector(".ncard.formopen"));
+}
+const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "…" : t);
+function needsTop(s, ask) {
+  const look = lookOf(s.name);
+  // The question itself: the picker's, else the last sentence of its reply that asks something.
+  const asked = (s.lastReply || "").replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).filter((x) => /\?\s*\W*$/.test(x)).at(-1);
+  const q = ask.question || asked || ask.note || clip((s.lastReply || "").replace(/\s+/g, " "), 220) || "It's waiting for you.";
+  const buttons = s.askBlocked ? "" : ask.options.map((o, i) => `<button type="button" data-nq="${i}" title="${o.key ? `Presses ${esc(o.key)} in its terminal` : `Sends “${esc(o.send)}”`}">${esc(o.label)}</button>`).join("");
+  const here = formable(s, ask) ? `<button type="button" class="go" data-nform>Answer here</button>` : "";
+  const open = here ? "Open" : ask.picker && !ask.options.length ? "Answer the form →" : buttons ? "Open" : "Answer →";
+  return `${chipHtml(look)} <span class="label">${esc(ago(s.lastActivity))} ago</span>
+    <div class="nq">${esc(clip(q, 260))}</div><div class="nbtns">${buttons}${here}<button type="button"${here ? "" : ` class="go"`} data-nopen>${open}</button></div>`;
 }
 $("needs").addEventListener("click", async (e) => {
   const card = e.target.closest(".ncard"), btn = e.target.closest("button"); if (!card || !btn || btn.classList.contains("chip")) return;
   const n = nodes.get(card.dataset.sid); if (!n) return;
+  if (btn.hasAttribute("data-nform")) {
+    // The picker's form, in the card: the same form as in the open session, answered through the same picker driver.
+    const ask = askOf(n.s), box = card.querySelector(".nform");
+    if (!formable(n.s, ask)) return;
+    const open = !card.classList.contains("formopen");
+    if (open && !box.innerHTML) box.innerHTML = askFormHtml({ id: `need-${n.s.sessionId}`, questions: ask.questions });
+    card.classList.toggle("formopen", open); box.hidden = !open; btn.textContent = open ? "Hide the form" : "Answer here";
+    $("needs").classList.toggle("answering", !!$("needs").querySelector(".ncard.formopen"));
+    if (open) box.querySelector("input")?.focus({ preventScroll: true }), card.scrollIntoView({ block: "nearest" });
+    return;
+  }
   if (btn.hasAttribute("data-nopen")) {
     if (selected !== n.s.sessionId) select(n.s.sessionId);
     setView("chat");
@@ -1947,12 +1991,17 @@ function askNote(form, text, bad = false, terminal = false) {
   note.classList.toggle("bad", bad);
   note.innerHTML = esc(text) + (terminal ? `<button type="button" data-openterm>Open the Terminal tab</button>` : "");
 }
-document.addEventListener("click", (e) => { if (e.target.closest?.(".aform [data-openterm]")) setView("term"); });
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.(".aform [data-openterm]"); if (!b) return;
+  const card = b.closest(".ncard"); if (card && selected !== card.dataset.sid) select(card.dataset.sid);
+  setView("term");
+});
 document.addEventListener("submit", async (e) => {
   const form = e.target.closest?.(".aform"); if (!form) return;
   e.preventDefault();
-  const n = nodes.get(popup.id), c = popup.log?.items.get(form.dataset.ask);
-  if (!n || !c || n.s.askBlocked || form.classList.contains("busy") || form.classList.contains("sent")) return;
+  const card = form.closest(".ncard");
+  const n = nodes.get(card ? card.dataset.sid : popup.id), c = card ? { questions: n && askOf(n.s)?.questions } : popup.log?.items.get(form.dataset.ask);
+  if (!n || !c?.questions || n.s.askBlocked || form.classList.contains("busy") || form.classList.contains("sent")) return;
   const answers = [];
   for (const [i, q] of (c.questions || []).entries()) {
     const box = form.querySelector(`[data-qi="${i}"]`), name = q.header || q.question;

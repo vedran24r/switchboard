@@ -330,9 +330,10 @@ test("display names: automatic names show the ticket or folder; given names stay
 
 test("AskUserQuestion: a card in the chat with its answer; waiting on you while open (number keys)", () => {
   const one = askFromQuestion({ questions: [{ question: "Which fix?", header: "Fix", multiSelect: false, options: [{ label: "Patch it" }, { label: "Rewrite it", description: "bigger" }] }] })!;
-  assert.deepEqual(one, { kind: "permission", picker: true, question: "Which fix?", options: [{ label: "1. Patch it", key: "1" }, { label: "2. Rewrite it", key: "2" }] });
-  const many = askFromQuestion({ questions: [{ question: "A?", options: [] }, { question: "B?", options: [] }] })!;
-  assert.deepEqual([many.options, /2 questions/.test(many.note!)], [[], true]);
+  assert.deepEqual(one, { kind: "permission", picker: true, question: "Which fix?", options: [{ label: "1. Patch it", key: "1" }, { label: "2. Rewrite it", key: "2" }],
+    questions: [{ question: "Which fix?", header: "Fix", options: [{ label: "Patch it" }, { label: "Rewrite it", description: "bigger" }] }] });
+  const many = askFromQuestion({ questions: [{ question: "A?", options: [] }, { question: "B?", multiSelect: true, options: [{ label: "x" }] }] })!;
+  assert.deepEqual([many.options, /2 questions/.test(many.note!), many.questions], [[], true, [{ question: "A?", options: [] }, { question: "B?", multiSelect: true, options: [{ label: "x" }] }]]);
   const s = byName["repo-abc-12-93"];
   assert.equal(s.display, "ABC-12");
   const chat = sessionChat(s.sessionId).chat;

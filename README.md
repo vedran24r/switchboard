@@ -79,7 +79,8 @@ Three columns: the Switchboard chat (drag its right edge to resize), the session
     then click one for its details. Bash lines show the call's description, or the real command (no `cd <folder> &&`).
   - Lines about a session carry its coloured chip. Click the chip to open that session.
   - **Waiting on you:** a card at the top for each session that asks you something, with its question and its answer
-    buttons (Yes / No, the numbers, a picker's options). **Open** (or **Answer the form →**) opens it on the right.
+    buttons (Yes / No, the numbers, a picker's options). A picker with several questions (or "pick any") gets **Answer
+    here**: the same form as in the open session, right in the card. **Open** opens the session on the right.
   - **`@name message`** sends the message straight to that session as your own input, not through Switchboard. Names
     are suggested as you type `@…`; a name that matches no session goes to Switchboard unchanged.
 - **Session list** (middle): waiting on you first, then unread, working, idle, stale. Each row has the session's icon and

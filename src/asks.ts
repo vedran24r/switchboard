@@ -12,8 +12,10 @@ import { socketFor } from "./tmux.ts";
 
 export interface AskOption { label: string; send?: string; key?: string }
 /** `note`: shown instead of buttons when the options can't be guessed (several open questions). */
-/** `picker`: Claude Code's AskUserQuestion picker (from the transcript, or seen on its screen). */
-export interface Ask { kind: "permission" | "question"; options: AskOption[]; note?: string; question?: string; picker?: boolean }
+/** `picker`: Claude Code's AskUserQuestion picker (from the transcript, or seen on its screen). `questions`: the whole
+ * picker from the transcript, so the page can draw the answer form in its "Waiting on you" card too. */
+export interface PickerQuestion { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
+export interface Ask { kind: "permission" | "question"; options: AskOption[]; note?: string; question?: string; picker?: boolean; questions?: PickerQuestion[] }
 
 const clean = (s: string) => s.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
 /** Button text: at most `n` characters, cut at a word. */
@@ -119,10 +121,14 @@ export function askFromQuestion(input: any): Ask | undefined {
   const qs = Array.isArray(input?.questions) ? input.questions : [];
   if (!qs.length) return;
   const q = qs[0];
+  const questions: PickerQuestion[] = qs.map((x: any) => ({
+    question: String(x?.question ?? ""), ...(x?.header ? { header: String(x.header) } : {}), ...(x?.multiSelect ? { multiSelect: true } : {}),
+    options: (Array.isArray(x?.options) ? x.options : []).map((o: any) => ({ label: String(o?.label ?? ""), ...(o?.description ? { description: String(o.description) } : {}) })),
+  }));
   if (qs.length > 1 || q.multiSelect)
-    return { kind: "question", options: [], picker: true, question: clean(String(q.question ?? "")), note: `It's asking ${qs.length > 1 ? `${qs.length} questions` : "a pick-several question"} in its picker: answer in the form above, or in the Terminal tab.` };
+    return { kind: "question", options: [], picker: true, questions, question: clean(String(q.question ?? "")), note: `It's asking ${qs.length > 1 ? `${qs.length} questions` : "a pick-several question"} in its picker: answer in the form above, or in the Terminal tab.` };
   const options = (Array.isArray(q.options) ? q.options : []).slice(0, 9).map((o: any, i: number) => ({ label: short(`${i + 1}. ${clean(String(o.label ?? ""))}`), key: String(i + 1) }));
-  return { kind: "permission", options, picker: true, question: clean(String(q.question ?? "")) };
+  return { kind: "permission", options, picker: true, questions, question: clean(String(q.question ?? "")) };
 }
 
 /** Options from Claude Code's permission dialog as shown on the terminal screen; an open question picker is a note. */

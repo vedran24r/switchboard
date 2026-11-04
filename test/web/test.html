@@ -931,6 +931,38 @@ const HELPERS = () => {
     T.eq(T.sent.length, 0, "nothing went to Switchboard");
     return "ok";
   });
+  await check("desk: a picker with several questions is answered in its card; the form survives polls; the answer goes to that session", D, async () => {
+    const real = window.fetch, posts = [], id = T.node("repo-abc-12-93").s.sessionId;
+    const questions = [{ question: "Ship it now?", header: "Ship", options: [{ label: "Yes, ship" }, { label: "Wait for review" }] },
+      { question: "Which checks?", header: "Checks", multiSelect: true, options: [{ label: "Unit" }, { label: "Browser" }] }];
+    const fake = (list) => list.map((s) => s.sessionId === id ? { ...s, ask: { kind: "question", options: [], picker: true, question: "Ship it now?", questions } } : s);
+    window.fetch = async (u, o) => {
+      if (String(u) === "/api/session/answer") { posts.push(JSON.parse(o.body)); return new Response(JSON.stringify({ answered: true }), { headers: { "content-type": "application/json" } }); }
+      const res = await real(u, o);
+      if (!String(u).startsWith("/api/state")) return res;
+      const d = await res.json(); d.sessions = fake(d.sessions);
+      return new Response(JSON.stringify(d), { headers: { "content-type": "application/json" } });
+    };
+    try {
+      const card = () => document.querySelector(`#needs .ncard[data-sid="${id}"]`);
+      for (let i = 0; i < 40 && !card()?.querySelector("[data-nform]"); i++) await T.sleep(100);
+      const r = { buttons: [...card().querySelectorAll(".nbtns button")].map((b) => b.textContent) };
+      card().querySelector("[data-nform]").click();
+      const form = card().querySelector(".aform");
+      r.form = [...form.querySelectorAll(".aqq")].map((x) => x.textContent); r.wider = $("needs").classList.contains("answering");
+      form.querySelector('[data-qi="0"] input[value="1"]').click(); form.querySelector('[data-qi="1"] input[value="0"]').click();
+      form.querySelector('[data-qi="1"] .aothertext').value = "lint"; form.querySelector('[data-qi="1"] .aothertext').dispatchEvent(new Event("input", { bubbles: true }));
+      await T.sleep(3500); // two polls
+      r.kept = card().querySelector(".aform") === form && form.querySelector('[data-qi="0"] input[value="1"]').checked && card().querySelector("[data-nform]").textContent === "Hide the form";
+      form.querySelector(".asubmit").click();
+      for (let i = 0; i < 30 && !posts.length; i++) await T.sleep(100);
+      await T.sleep(50);
+      r.posted = posts; r.note = form.querySelector(".anote").textContent;
+      T.eq(r, { buttons: ["Answer here", "Open"], form: ["ShipShip it now?", "ChecksWhich checks? pick any"], wider: true, kept: true,
+        posted: [{ sessionId: id, questions: ["Ship it now?", "Which checks?"], answers: [{ picks: [1] }, { picks: [0], other: "lint" }] }], note: "Answered ✓" }, "card form");
+    } finally { window.fetch = real; }
+    return "ok";
+  });
   await check("desk: '@name message' goes straight to that session (shown in its pane); unknown names go to Switchboard", D, async () => {
     T.sent.length = 0;
     input.value = "@be"; input.dispatchEvent(new Event("input"));

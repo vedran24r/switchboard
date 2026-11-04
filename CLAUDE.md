@@ -83,6 +83,9 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   moving. Typing on the Type something row writes there at once (no Enter first) and ticks it in multi; digits typed there
   are text. ←/→ and Tab switch tabs. Review: `Review your answers`, ` ● question` / `   → answer`, `⚠ You have not answered
   all questions` if any is empty, `❯ 1. Submit answers` / `2. Cancel`. **Esc cancels the whole picker**: never press it.
+- `Ask.questions` (asks.ts) carries the whole open picker, so the "Waiting on you" card can draw the same form (`askFormHtml`);
+  its submit finds the session from the card's `data-sid`. Cards are kept per session (`renderNeeds`): only `.ntop` is redrawn,
+  so a half-filled form survives the polls.
 - `drivePicker` only moves down, verifies the whole question (title, every label, boxes, the one highlighted row, other tabs'
   ☐/☒) after every key, and stops on the first surprise (409 "Couldn't answer automatically…", `detail` says which step).
   Tests: `test/fake-picker.ts` is a scripted picker drawn like the real captures; run as a script it's a fake `tmux`
