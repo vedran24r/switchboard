@@ -2457,13 +2457,13 @@ function renderAgents(s) {
   if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
 }
 
-/* The session list (a column on the desk, a tab on a phone): waiting on you first. */
-const RANK = { "needs-you": 0, working: 2, idle: 3, stale: 4 };
+/* The session list (a column on the desk, a tab on a phone): in the order they started, new ones at the bottom.
+   Rows never move by themselves (Vedran: re-sorting by state mid-use is confusing); the ? mark, the unread dot and the
+   "Waiting on you" cards say which need you. */
 let lastList = [];
 function renderList(list) {
   lastList = list;
-  const rank = (s) => askOf(s) ? 0 : isUnread(s) && s.state !== "working" ? 1 : RANK[s.state] ?? 5;
-  const sorted = [...list].sort((a, b) => rank(a) - rank(b) || b.lastActivity - a.lastActivity);
+  const sorted = [...list].sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0) || a.sessionId.localeCompare(b.sessionId));
   const html = sorted.map((s) => {
     const label = s.state === "needs-you" ? "needs you" : s.state, line = (s.doing || "").replace(/\s+/g, " ").trim();
     return `<button type="button" class="srow-s${s.sessionId === selected ? " on" : ""}" data-id="${esc(s.sessionId)}" style="--tint:${esc(s.color || "var(--accent)")}">
@@ -2475,8 +2475,8 @@ function renderList(list) {
   // Only touch the DOM when something changed, or taps get swallowed mid-redraw.
   if ($("rows").dataset.html !== html) { $("rows").dataset.html = html; $("rows").innerHTML = html; }
   renderNeeds(sorted);
-  // The desk always shows a session: the first in the list (waiting on you first) until you pick one.
-  if (deck && !selected && sorted.length) select(sorted[0].sessionId);
+  // The desk always shows a session until you pick one: the first waiting on you, else the first row.
+  if (deck && !selected && sorted.length) select((sorted.find((s) => askOf(s) || s.state === "needs-you") ?? sorted[0]).sessionId);
   const waiting = list.filter((s) => askOf(s) || s.state === "needs-you").length;
   $("needsbadge").textContent = waiting || "";
   try { waiting ? navigator.setAppBadge?.(waiting) : navigator.clearAppBadge?.(); } catch {}

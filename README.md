@@ -88,7 +88,8 @@ Three columns: the Switchboard chat (drag its right edge to resize), the session
     session; × hides the card until your next message.
   - **`@name message`** sends the message straight to that session as your own input, not through Switchboard. Names
     are suggested as you type `@…`; a name that matches no session goes to Switchboard unchanged.
-- **Session list** (middle): waiting on you first, then unread, working, idle, stale. Each row has the session's icon and
+- **Session list** (middle): in the order the sessions started, new ones at the bottom. Rows don't move when a
+  session's state changes; the marks below say which need you. Each row has the session's icon and
   colour (by folder, `domains`), its status, context size, last activity and what it's doing.
   - **Marks:** a red dot means an unread reply. A yellow **?** means it's waiting on you. A **🤖** (🤖2, 🤖3…) means it
     has agents running (hover for the list). Context over the hand-off limit shows in red.
@@ -178,8 +179,8 @@ Hands-free, mic, stop after silence, send when done, language, send keyword, voi
 calibrate, collapse long messages, show tool activity, density. All are remembered.
 
 ## Phone and other computers
-- **Phone layout:** tabs at the bottom (Chat, Sessions, Settings). Sessions lists the ones waiting on you first,
-  with a badge. A session opens full screen, and Back closes it. Add it to the home screen for a full-screen app;
+- **Phone layout:** tabs at the bottom (Chat, Sessions, Settings). Sessions lists them in the order they started,
+  with a badge for the ones waiting on you. A session opens full screen, and Back closes it. Add it to the home screen for a full-screen app;
   `?tab=list` opens a tab directly.
 - **Losing the connection:** a red "No connection" pill shows, and requests time out instead of hanging.
   - **Messages:** unsent ones are kept (even across a reload) and go out by themselves when it's back. Each carries an

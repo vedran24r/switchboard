@@ -128,7 +128,7 @@ export function makeFixture(home: string) {
     ] },
   ];
 
-  for (const s of sessions) {
+  for (const [i, s] of sessions.entries()) {
     const configDir = path.join(home, s.configDir);
     const sessionId = `${s.name.toLowerCase()}-0000-0000`;
     mkdirSync(path.join(configDir, "sessions"), { recursive: true });
@@ -137,8 +137,9 @@ export function makeFixture(home: string) {
     writeFileSync(transcript, s.lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
     if (s.mtime) utimesSync(transcript, s.mtime / 1000, s.mtime / 1000);
     const updatedAt = s.updatedAt ?? now - 1000;
+    const startedAt = now - i * 60_000; // later fixtures started earlier, so start order isn't fixture or name order
     writeFileSync(path.join(configDir, "sessions", `${s.name}.json`), JSON.stringify({
-      pid: process.pid, sessionId, cwd: s.cwd, kind: "interactive", name: s.name, status: s.status, tmux: s.tmux, updatedAt, statusUpdatedAt: updatedAt,
+      pid: process.pid, sessionId, cwd: s.cwd, kind: "interactive", name: s.name, status: s.status, tmux: s.tmux, startedAt, updatedAt, statusUpdatedAt: updatedAt,
     }));
   }
   return { home, state, folders };

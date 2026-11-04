@@ -150,3 +150,5 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   The page loads it on open and ↻ only (no polling). Tests build the repo with `makeRepo` (fixtures.ts, hooks/signing off).
 - After a /compact (or auto-compact) Claude Code writes its summary as a `user` line with `isCompactSummary: true`. `readChat` and
   `parseTranscript` skip it, or it shows up as Vedran's last message and hides the reply before it (2026-11-04).
+- The session list is in start order (`Session.startedAt`, the registry's `startedAt`), never re-sorted by state: Vedran
+  found rows jumping around mid-use confusing (2026-11-04). Marks and the "Waiting on you" cards show who needs him.

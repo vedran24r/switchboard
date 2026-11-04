@@ -34,6 +34,8 @@ export interface Session {
   /** The handoff note it wrote after its last prompt (then needsHandoff is off). */
   handoffNote?: string;
   lastActivity: number;
+  /** When it started (the registry's startedAt, 0 if missing): the page's list keeps this order. */
+  startedAt: number;
   lastPrompt?: string;
   lastReply?: string;
   /** One line: what it's doing now (latest tool or text) while working, else the start of its last reply. */
@@ -295,6 +297,7 @@ export function listSessions(config: Config = loadConfig()): Session[] {
         needsHandoff: t.contextTokens >= config.handoffTokens && !t.handoffNote,
         handoffNote: t.handoffNote,
         lastActivity,
+        startedAt: Number(info.startedAt) || 0,
         lastPrompt: t.lastPrompt,
         lastReply: t.lastReply,
         doing: t.doing,

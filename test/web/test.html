@@ -918,7 +918,7 @@ const HELPERS = () => {
     const p = panel.getBoundingClientRect(), c = $("chat").getBoundingClientRect(), l = $("list").getBoundingClientRect();
     const on = document.querySelector("#rows .srow-s.on");
     T.eq({ deck: document.body.classList.contains("deck"), noMap: !document.querySelector("svg#map, #mapwrap"), shown, order: c.right <= l.left + 1 && l.right <= p.left + 1, full: Math.round(p.top) === 0 && Math.round(p.bottom) === innerHeight,
-      wide: p.width > innerWidth * 0.45, open: panel.classList.contains("open"), rowOn: on?.dataset.id === selected, first: document.querySelector("#rows .srow-s")?.dataset.id === selected,
+      wide: p.width > innerWidth * 0.45, open: panel.classList.contains("open"), rowOn: on?.dataset.id === selected, first: selected === ([...nodes.values()].find((n) => askOf(n.s) || n.s.state === "needs-you") ? [...document.querySelectorAll("#rows .srow-s")].find((r) => { const x = nodes.get(r.dataset.id).s; return askOf(x) || x.state === "needs-you"; })?.dataset.id : document.querySelector("#rows .srow-s")?.dataset.id),
       composer: !$("p-form").classList.contains("collapsed"), settings: $("list").contains($("settings")) },
       { deck: true, noMap: true, shown: ["chat", "list", "panel"], order: true, full: true, wide: true, open: true, rowOn: true, first: true, composer: true, settings: true }, "desk");
     return "ok";
@@ -1060,15 +1060,15 @@ const HELPERS = () => {
     T.assert(!desk.document.body.classList.contains("phone") && desk.getComputedStyle(desk.document.getElementById("tabs")).display === "none", "desktop unchanged");
     return "ok";
   });
-  await check("phone: Sessions tab lists every session, waiting-on-you first, badge counts them", P, () => {
+  await check("phone: Sessions tab lists every session in the order they started (not by state), badge counts the waiting ones", P, () => {
     setTab("list");
     const rows = [...document.querySelectorAll("#rows .srow-s")];
     T.eq(rows.length, nodes.size, "one row per session");
+    const started = rows.map((r) => nodes.get(r.dataset.id).s.startedAt);
+    T.assert(started.every((t, i) => !i || t >= started[i - 1]), "oldest first: " + started);
     const waiting = [...nodes.values()].filter((n) => askOf(n.s) || n.s.state === "needs-you").length;
     T.assert(waiting > 0, "fixture has a waiting session");
-    const firstIds = rows.slice(0, waiting).map((r) => r.dataset.id);
-    T.assert(firstIds.every((id) => { const s = nodes.get(id).s; return askOf(s) || s.state === "needs-you"; }), "waiting ones on top");
-    T.assert(rows[0].querySelector(".q"), "? on the first row");
+    T.assert(rows.some((r) => r.querySelector(".q")), "the waiting ones carry the ?");
     T.eq($("needsbadge").textContent, String(waiting), "badge");
     return `${rows.length} rows, ${waiting} waiting`;
   });
