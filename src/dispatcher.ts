@@ -359,7 +359,8 @@ function readChatTail(tail: string, cwd: string) {
     } catch {
       continue;
     }
-    if (entry.isSidechain || entry.isMeta) continue;
+    // isCompactSummary: the summary Claude Code writes as a user line after a /compact, not something Vedran typed.
+    if (entry.isSidechain || entry.isMeta || entry.isCompactSummary) continue;
     const at = Date.parse(entry.timestamp) || 0;
     const content = entry.message?.content;
     // A message typed while the session was busy is taken in mid-turn and only recorded as a queued_command attachment,

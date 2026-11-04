@@ -163,7 +163,7 @@ function parseTranscript(file: string) {
       out.model ??= message.model;
     }
     // The session's final word (for "is it asking me something?"): only if nothing came after it.
-    if (!ended && (entry.type === "user" || entry.type === "assistant") && !entry.isMeta) {
+    if (!ended && (entry.type === "user" || entry.type === "assistant") && !entry.isMeta && !entry.isCompactSummary) {
       ended = true;
       if (entry.type === "assistant") out.finalText = textOf(message?.content);
     }
@@ -184,7 +184,7 @@ function parseTranscript(file: string) {
         out.lastReplyAt = Date.parse(entry.timestamp) || undefined;
       }
     }
-    if (entry.type === "user" && !out.lastPrompt && !entry.isMeta) {
+    if (entry.type === "user" && !out.lastPrompt && !entry.isMeta && !entry.isCompactSummary) {
       const text = textOf(message?.content);
       if (text && !text.startsWith("<")) out.lastPrompt = clip(text);
     }

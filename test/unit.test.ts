@@ -458,6 +458,17 @@ test("a message typed while the session was busy (taken in mid-turn) shows as yo
   assert.deepEqual(you.map((c) => [c.id, c.text, c.queued]), [["u1", "fix the picker for Sam", undefined], ["q1", text, true], ["q3", "and the same again later", undefined]]);
 });
 
+test("the summary written after a /compact isn't shown as your message", async () => {
+  const { readChat } = await import("../src/dispatcher.ts");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sb-compact-")), file = path.join(dir, "t.jsonl"), at = (s: number) => new Date(Date.parse("2026-11-04T15:00:00Z") + s * 1000).toISOString();
+  writeFileSync(file, [{ type: "user", uuid: "u1", timestamp: at(0), message: { role: "user", content: "fix it for Sam" } },
+    { type: "assistant", uuid: "a1", timestamp: at(3), message: { role: "assistant", content: [{ type: "text", text: "Fixed." }] } },
+    { type: "system", subtype: "compact_boundary", uuid: "c0", timestamp: at(60) },
+    { type: "user", uuid: "c1", timestamp: at(61), isCompactSummary: true, isVisibleInTranscriptOnly: true, message: { role: "user", content: "This session is being continued from a previous conversation…" } },
+  ].map((x) => JSON.stringify(x)).join("\n") + "\n");
+  assert.deepEqual(readChat(file).chat.map((c) => [c.role, c.text]), [["you", "fix it for Sam"], ["switchboard", "Fixed."]]);
+});
+
 test("chat survives a screenshot in the transcript: one huge line doesn't push every message out of the tail", async () => {
   const { readChat } = await import("../src/dispatcher.ts");
   const dir = mkdtempSync(path.join(os.tmpdir(), "sb-bigline-")), file = path.join(dir, "t.jsonl"), at = (s: number) => new Date(Date.parse("2026-11-02T15:00:00Z") + s * 1000).toISOString();
