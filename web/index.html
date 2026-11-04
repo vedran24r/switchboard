@@ -28,7 +28,6 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
     font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   body { display: grid; grid-template-columns: var(--chat-w, 380px) 1fr; height: 100vh; overflow: hidden; transition: grid-template-columns .22s ease; }
-  body.chat-wide { --chat-w: max(var(--chat-base, 380px), min(760px, 58vw)); }
   body.dragging { transition: none; user-select: none; cursor: col-resize; }
   #resizer { position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; z-index: 5; }
   #resizer::after { content: ""; position: absolute; top: 50%; left: 3px; width: 2px; height: 40px; margin-top: -20px; border-radius: 1px; background: var(--line); }
@@ -226,26 +225,10 @@
   #lightbox.open { display: grid; }
   #lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 8px; }
 
-  /* Map */
-  #mapwrap { position: relative; min-width: 0; min-height: 0; }
-  #legend { position: absolute; top: 12px; left: 16px; right: 16px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 2; pointer-events: none; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
     background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
   .chip b { color: var(--ink); font-weight: 600; }
   .dot { width: 9px; height: 9px; border-radius: 50%; }
-  svg { width: 100%; height: 100%; display: block; touch-action: none; }
-  .edge-repo { stroke: var(--line); stroke-width: 1.5; }
-  .edge-group { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 4; opacity: .7; }
-  .edge-route { stroke: var(--accent); stroke-width: 1.5; opacity: .35; }
-  .node { cursor: pointer; }
-  .node circle.body { stroke: var(--bg); stroke-width: 2; transition: fill .4s; }
-  .node circle.body { fill: var(--idle); }
-  .node circle.track { fill: none; stroke: var(--line); stroke-width: 3; }
-  .node circle.arc { fill: none; stroke: var(--working); stroke-width: 3; stroke-linecap: round; transform: rotate(-90deg); transform-box: fill-box; transform-origin: center; }
-  .node circle.arc.hot { stroke: var(--handoff); }
-  .node text.icon { text-anchor: middle; stroke: none; paint-order: normal; }
-  .askmark circle { fill: var(--needs); stroke: var(--bg); stroke-width: 2; }
-  .askmark text { text-anchor: middle; font-size: 13px; font-weight: 800; fill: #1b1f24; stroke: none; paint-order: normal; }
   .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .quick:empty { display: none; }
   .quick .qlabel { flex-basis: 100%; font-size: 11.5px; color: var(--muted); }
@@ -308,46 +291,6 @@
   .ptools .qkeys .arm { background: var(--needs); border-color: var(--needs); color: #1b1f24; }
   .ptools.readonly button { opacity: .4; pointer-events: none; }
   .ptools .tnote { font-size: 11.5px; color: var(--muted); }
-  .node circle.unread { fill: var(--handoff); stroke: var(--bg); stroke-width: 2; }
-  .node.stale circle.body { opacity: .35; }
-  .node.stale text.icon { opacity: .45; filter: grayscale(1); }
-  .chip-s rect { fill: var(--soft); stroke: var(--line); }
-  .chip-s rect.st-working { fill: var(--working); stroke: none; }
-  .chip-s rect.st-needs-you { fill: var(--needs); stroke: none; }
-  .chip-s rect.st-idle { fill: var(--soft); }
-  .chip-s rect.st-stale { fill: var(--stale); stroke: none; }
-  .chip-s text { text-anchor: middle; font-size: 11px; font-weight: 600; fill: var(--ink); stroke: none; paint-order: normal; }
-  .node.working .chip-s text, .node.needs-you .chip-s text { fill: #fff; }
-  .say path { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
-  .say.fresh path { stroke: var(--accent); stroke-width: 2; }
-  .say { pointer-events: none; }
-  .say text { text-anchor: middle; font-size: 11.5px; fill: var(--ink); stroke: none; paint-order: normal; }
-  .node.stale .say { opacity: .6; }
-  .node circle.pulse { fill: none; stroke-width: 2; transform-box: fill-box; transform-origin: center; }
-  .node.working circle.pulse { stroke: var(--working); animation: pulse 1.6s ease-out infinite; }
-  .node.needs-you circle.pulse { stroke: var(--needs); stroke-width: 2.5; animation: pulse 2.4s ease-out infinite; }
-  .node .hit { transform-box: fill-box; transform-origin: center; }
-  .node.hitting .hit { animation: hit .6s ease-out; }
-  /* sb pulse: "these are the ones I mean" */
-  .node.flash-needs-you .hit, .node.flash-continue .hit, .node.flash-info .hit { animation: flash 1.5s ease-in-out; }
-  .node.flash-needs-you circle.body { filter: drop-shadow(0 0 14px var(--needs)); }
-  .node.flash-continue circle.body { filter: drop-shadow(0 0 14px #2fbf71); }
-  .node.flash-info circle.body { filter: drop-shadow(0 0 14px var(--working)); }
-  @keyframes flash { 0%, 100% { transform: scale(1); } 20%, 60% { transform: scale(1.22); } 40%, 80% { transform: scale(1.05); } }
-  .flashtag { text-anchor: middle; font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; transition: opacity .5s; }
-  .flashtag.needs-you { fill: var(--needs); } .flashtag.continue { fill: #2fbf71; } .flashtag.info { fill: var(--working); }
-  @keyframes pulse { from { transform: scale(1); opacity: .8; } to { transform: scale(1.45); opacity: 0; } }
-  @keyframes hit { 30% { transform: scale(1.18); } 100% { transform: scale(1); } }
-  .node text, .hub text, .toast { text-anchor: middle; pointer-events: none; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
-  .node text.name, .hub text { font-weight: 600; font-size: 12.5px; }
-  .node text.meta { font-size: 11px; fill: var(--muted); }
-  .node.selected circle.body { stroke: var(--ink); stroke-width: 3; }
-  .hub circle { fill: var(--panel); stroke: var(--accent); stroke-width: 3; }
-  .hub.working circle { animation: hubglow 1s infinite alternate; }
-  @keyframes hubglow { to { stroke-width: 7; } }
-  .hub.off circle { stroke: var(--stale); stroke-dasharray: 4 4; }
-  .packet { fill: var(--accent); }
-  .toast { font-size: 12px; fill: var(--accent); font-weight: 600; transition: opacity .6s; }
   aside { position: absolute; top: 52px; right: 16px; width: 360px; max-height: min(560px, calc(100% - 68px));
     background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; z-index: 3; display: none;
     flex-direction: column; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
@@ -362,13 +305,8 @@
   aside summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   aside code { display: block; padding: 8px; background: var(--bg); border-radius: 6px; font-size: 12px; word-break: break-all; }
   aside .row button, aside .warn button { margin-top: 6px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
-  .pinpop { position: absolute; top: 11px; right: 104px; border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 1px 8px; font-size: 11.5px; color: var(--muted); }
-  .pinpop.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .activetag { font-size: 11.5px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
   .pcomposer.collapsed { display: none; }
   .replyhere { margin-top: 6px; border: 1px dashed var(--line); background: none; border-radius: 8px; padding: 6px; font-size: 12.5px; color: var(--muted); }
-  .grow { position: absolute; top: 11px; right: 38px; border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 1px 8px; font-size: 11.5px; color: var(--muted); }
-  aside.big { width: min(640px, calc(100% - 32px)); max-height: calc(100% - 68px); }
   aside #p-meta { overflow-wrap: anywhere; }
   aside h2 { overflow-wrap: anywhere; }
   .close { position: absolute; top: 8px; right: 10px; border: 0; background: none; font-size: 20px; color: var(--muted); }
@@ -382,17 +320,7 @@
   .pnote { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); }
   .bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-top: 4px; }
   .bar i { display: block; height: 100%; }
-  .node.leaving { opacity: 0; transition: opacity .6s; }
   .warn { color: var(--handoff); font-weight: 600; }
-
-  @media (max-width: 860px) {
-    body { grid-template-columns: 1fr; grid-template-rows: 52vh 48vh; }
-    #mapwrap { grid-row: 1; } #chat { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); }
-    aside { inset: auto 8px 8px 8px !important; width: auto; max-height: 75%; }
-    #resizer { display: none; }
-    #settings { top: auto; bottom: 8px; right: 8px; }
-    .chip { font-size: 11px; }
-  }
 
   #offline { display: none; position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 50; margin-top: max(6px, env(safe-area-inset-top));
     background: var(--handoff); color: #fff; font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.3); max-width: calc(100% - 24px); text-align: center; }
@@ -400,9 +328,9 @@
   /* ---------- Phone: one screen at a time, tabs at the bottom (body.phone is set by width, see setPhone) ---------- */
   #tabs, #list, #more { display: none; }
   body.phone { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) auto; height: 100dvh; }
-  body.phone #resizer, body.phone #legend .chip.hint-only { display: none; }
-  body.phone #chat, body.phone #mapwrap, body.phone #list, body.phone #more { grid-row: 1; grid-column: 1; border: 0; min-height: 0; }
-  body.phone:not([data-tab="chat"]) #chat, body.phone:not([data-tab="map"]) #mapwrap,
+  body.phone #resizer { display: none; }
+  body.phone #chat, body.phone #list, body.phone #more { grid-row: 1; grid-column: 1; border: 0; min-height: 0; }
+  body.phone:not([data-tab="chat"]) #chat,
   body.phone:not([data-tab="list"]) #list, body.phone:not([data-tab="more"]) #more { display: none; }
   body.phone[data-tab="list"] #list, body.phone[data-tab="more"] #more { display: flex; }
   body.phone #chat header { padding-top: max(14px, env(safe-area-inset-top)); }
@@ -439,7 +367,7 @@
   /* A session opens as a full screen sheet; Back (or the phone's back gesture) closes it. */
   body.phone aside.open { position: fixed; inset: 0 !important; width: auto !important; max-height: none !important; border-radius: 0; border: 0; z-index: 30;
     padding: max(12px, env(safe-area-inset-top)) 14px max(10px, env(safe-area-inset-bottom)); }
-  body.phone aside .pinpop, body.phone aside .grow, body.phone aside .replyhere { display: none; }
+  body.phone aside .replyhere { display: none; }
   body.phone aside .close { position: static; font-size: 15px; color: var(--accent); padding: 4px 0; text-align: left; font-weight: 600; }
   body.phone aside .close::before { content: "‹ Back"; } body.phone aside .close span { display: none; }
   body.phone aside h2 { margin-right: 0; font-size: 17px; }
@@ -447,16 +375,14 @@
   body.phone .pview button { padding: 6px 16px; font-size: 14px; }
   body.phone .ptools button { padding: 8px 12px; font-size: 14px; } body.phone .ptools .qkeys button { font-size: 13.5px; }
   body.phone .pterm { font-size: 11px; }
-  body.phone .srow:has(#pin), body.phone .shint { display: none; } /* mouse and keyboard only */
+  body.phone .shint { display: none; } /* mouse and keyboard only */
   /* iOS doesn't shrink the page for the on-screen keyboard: size to the visible part instead (--vvh, see fitKeyboard)
      and hide the tabs while typing so the input stays right above the keyboard. */
   body.phone.vv { height: var(--vvh, 100dvh); }
   body.phone.kb #tabs { display: none; }
   body.phone.vv aside.open { bottom: auto !important; height: var(--vvh, 100dvh); }
-  /* ---------- Desk layout (the default on a computer): Switchboard chat | session list | the open session.
-     The bubble map is still there as Settings → Layout → Map (or ?layout=map). ---------- */
+  /* ---------- Desk layout (every screen wider than a phone): Switchboard chat | session list | the open session. ---------- */
   body.deck { grid-template-columns: var(--chat-w, 34vw) 290px minmax(0, 1fr); }
-  body.deck #mapwrap { display: none; }
   body.deck #list { display: flex; grid-row: 1; grid-column: 2; min-height: 0; padding-top: 12px; border-right: 1px solid var(--line); }
   body.deck #list h1 { font-size: 14px; margin: 2px 12px 8px; }
   body.deck #list h1 .newbtn { font-size: 12px; padding: 3px 9px; }
@@ -467,7 +393,8 @@
   body.deck .srow-s .av { width: 30px; height: 30px; font-size: 15px; }
   body.deck .srow-s .nm { font-size: 13.5px; } body.deck .srow-s .rt { font-size: 10.5px; } body.deck .srow-s .ln { font-size: 12px; }
   body.deck .srow-s .st { margin-left: 5px; }
-  body.deck .srow-s.flash { animation: rowflash 1.4s ease; }
+  .srow-s.flash { animation: rowflash 1.4s ease; }
+  body.deck .srow-s.flash-needs-you { --tint: var(--needs); } body.deck .srow-s.flash-continue { --tint: #2fbf71; }
   @keyframes rowflash { 0%, 40% { background: color-mix(in srgb, var(--tint) 35%, var(--panel)); } }
   body.deck #list #settings { position: static; width: auto; margin: 8px 10px 10px; flex: none; }
   body.deck #list .trustwaits { margin: 0 10px; }
@@ -475,14 +402,14 @@
     border: 0; border-radius: 0; box-shadow: none; padding: 14px 22px 12px; z-index: auto; min-width: 0; }
   body.deck aside#panel:not(.open) { align-items: center; justify-content: center; color: var(--muted); }
   body.deck aside#panel:not(.open)::before { content: "Pick a session on the left."; }
-  body.deck aside .close, body.deck aside .grow, body.deck aside .pinpop, body.deck aside .replyhere { display: none; }
+  body.deck aside .close, body.deck aside .replyhere { display: none; }
   body.deck aside h2 { margin-right: 0; font-size: 18px; }
   .phead { display: contents; }
   /* Desk: name, status, actions and Details on one line; Details opens as a dropdown over the chat. */
   body.deck .phead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 6px; }
   body.deck aside .phead h2 { margin: 0; font-size: 16px; flex: none; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   body.deck aside .phead #p-meta { flex: 1 1 160px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  body.deck .phead #p-agents, body.deck .phead .activetag { order: 9; flex-basis: 100%; }
+  body.deck .phead #p-agents { order: 9; flex-basis: 100%; }
   body.deck .phead .pactions { margin: 0; gap: 4px; }
   body.deck .phead .pactions button { padding: 2px 9px; font-size: 12px; }
   body.deck .phead #p-details { margin: 0; position: relative; }
@@ -493,7 +420,8 @@
   body.deck aside .pcomposer textarea { font-size: 14.5px; }
   /* "Needs you": every session waiting on you, at the top of the Switchboard chat, answerable right there. */
   #needs { display: none; }
-  body.deck #needs:not(:empty) { display: grid; gap: 6px; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); max-height: 42vh; overflow-y: auto; }
+  body.deck #needs:not(:empty) { display: grid; gap: 6px; padding: 8px 12px 10px; border-bottom: 1px solid var(--line); max-height: 28vh; overflow-y: auto; }
+  body.deck #input { max-height: 35vh; } /* with the cards above, the chat keeps at least a quarter of the height */
   #needs .nh { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--needs); }
   .ncard { border: 1px solid var(--line); border-left: 3px solid var(--tint); border-radius: 8px; padding: 7px 10px 8px; background: color-mix(in srgb, var(--tint) 9%, var(--panel)); font-size: 13px; }
   .ncard .nq { margin: 4px 0 6px; overflow-wrap: anywhere; }
@@ -507,17 +435,13 @@
   #atlist .chip { cursor: pointer; }
   /* "＋ New": a folder list, then an optional name and the first prompt. A centred box on desktop, full screen on a phone. */
   .newbtn { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--ink); border-radius: 8px; padding: 4px 11px; font-size: 12.5px; font-weight: 600; }
-  #mapwrap > .newbtn { position: absolute; left: 16px; bottom: 12px; z-index: 2; }
-  /* Started but sitting at Claude's first-run trust prompt (not in the registry yet, so not on the map). */
+  /* Started but sitting at Claude's first-run trust prompt (not in the registry yet, so not in the list). */
   .trustwaits:empty { display: none; }
-  #mapwrap > .trustwaits { position: absolute; left: 16px; bottom: 46px; z-index: 2; max-width: min(420px, 60vw); }
   .trustwait { display: flex; gap: 8px; align-items: center; padding: 6px 10px; margin-top: 6px; border: 1px dashed var(--stale); border-radius: 8px;
     background: var(--panel); color: var(--muted); font-size: 12.5px; }
   .trustwait b { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .trustwait button { margin-left: auto; flex: none; }
-  body.phone #mapwrap > .trustwaits { display: none; }
   #list .trustwait { font-size: 15px; padding: 10px 12px; }
-  body.phone #mapwrap > .newbtn { display: none; }
   #list h1 { display: flex; align-items: center; justify-content: space-between; }
   #list h1 .newbtn { font-size: 14px; padding: 6px 12px; }
   .nsdone { margin: 0 16px 8px; font-size: 12.5px; color: #2fbf71; }
@@ -563,7 +487,7 @@
   <div id="notice"></div>
   <div id="needs" aria-label="Waiting on you"></div>
   <button type="button" class="newpill" id="newpill" hidden>New messages ↓</button>
-  <div id="log"><div class="hint">Talk or type. Each idea goes to the session it belongs to, or a new one. Watch it fly on the map.</div></div>
+  <div id="log"><div class="hint">Talk or type. Each idea goes to the session it belongs to, or a new one. @name sends straight to one session.</div></div>
   <form id="composer">
     <textarea id="input" rows="1" placeholder="Say or type… (Enter sends, Shift+Enter new line)"></textarea>
     <button type="button" class="round" id="mic" title="Record (Ctrl+Space); click again to stop. Transcribed on this Mac." aria-label="Dictate">
@@ -603,25 +527,12 @@
 <nav id="tabs">
   <button type="button" data-tab="chat"><span class="ti">💬</span>Chat</button>
   <button type="button" data-tab="list"><span class="ti">☰</span>Sessions<span class="badge" id="needsbadge"></span></button>
-  <button type="button" data-tab="map"><span class="ti">◎</span>Map</button>
   <button type="button" data-tab="more"><span class="ti">⚙</span>Settings</button>
 </nav>
-<section id="mapwrap">
-  <div id="legend">
-    <span class="chip"><span class="dot" style="background:var(--working)"></span>working <b id="c-working">0</b></span>
-    <span class="chip"><span class="dot" style="background:var(--needs)"></span>needs you <b id="c-needs-you">0</b></span>
-    <span class="chip"><span class="dot" style="background:var(--idle)"></span>idle <b id="c-idle">0</b></span>
-    <span class="chip"><span class="dot" style="background:var(--stale)"></span>stale <b id="c-stale">0</b></span>
-    <span class="chip"><span class="dot" style="border:2px solid var(--handoff)"></span>hand off <b id="c-handoff">0</b></span>
-  </div>
-  <button type="button" class="newbtn" id="newbtn" title="Start a new session in a folder">＋ New session</button>
-  <div class="trustwaits" id="trustwaits-map"></div>
-  <svg id="map"><g id="edges"></g><g id="routes"></g><g id="nodes"></g><g id="says"></g><g id="fx"></g></svg>
-  <aside id="panel"></aside>
+<aside id="panel"></aside>
   <div id="settings">
     <button type="button" id="settingsbtn" aria-expanded="false">⚙ Settings</button>
     <div id="settingsbody">
-      <div class="srow"><span>Layout</span><button type="button" id="layoutbtn" title="List: chat, session list and the open session side by side. Map: the bubble map with popups.">list</button></div>
       <div class="srow"><span>Hands-free</span><button type="button" id="hfbtn">off</button></div>
       <div class="srow"><span>Mic</span><button type="button" id="micbtn">off</button></div>
       <div class="srow"><span title="Turn hands-free off when no speech (that passes the noise gate) is heard for this long">Stop after silence</span>
@@ -635,38 +546,25 @@
       <div class="srow"><span title="How much quieter than your calibrated voice still counts (dB). Lower = ignores more.">Sensitivity <b id="gatesensval"></b></span><input type="range" id="gatesens" min="4" max="30" step="1"></div>
       <div class="srow"><span>Calibrate voice</span><button type="button" id="calbtn">Calibrate</button></div>
       <hr>
-      <div class="srow"><span>Hover widen chat</span><button type="button" id="pin">off</button></div>
       <div class="srow"><span>Collapse long messages</span><button type="button" id="collapsebtn">off</button></div>
       <div class="srow"><span>Show tool activity</span><button type="button" id="toolsbtn">on</button></div>
       <div class="srow"><span>Density</span><button type="button" id="densebtn">Comfortable</button></div>
       <div class="shint">Ctrl+Space: mic on/off. Drag the chat's right edge to resize.</div>
     </div>
   </div>
-</section>
 
 <script>
-const NS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
-const svg = $("map"), gEdges = $("edges"), gRoutes = $("routes"), gNodes = $("nodes"), gFx = $("fx"), panel = $("panel");
-const nodes = new Map(); // sessionId → node
-let edges = [], selected = null, drag = null, state = { sessions: [], dispatcher: {}, handoffTokens: 300000 };
+const panel = $("panel");
+const nodes = new Map(); // sessionId → { s: the session from /api/state }
+let selected = null, state = { sessions: [], dispatcher: {}, handoffTokens: 300000 };
 const seenRoutes = new Set(); let firstLoad = true;
-const pendingPackets = []; // routes whose target bubble doesn't exist yet (just spawned)
 const pendingSays = []; // messages sent, not yet in the transcript
 
-const size = () => { const r = svg.getBoundingClientRect(); return { w: r.width, h: r.height }; };
-const radius = (tokens) => { const { w, h } = size(); return Math.min(Math.min(w, h) / 8, 24 + Math.sqrt(tokens / 1000) * 1.6); };
-const k = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "M" : n + "k";
 const ago = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return m < 1 ? "now" : m < 60 ? m + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d"; };
 const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const short = (p) => p.replace(/^\/Users\/[^/]+/, "~");
-function el(tag, attrs = {}, parent) {
-  const e = document.createElementNS(NS, tag);
-  for (const [a, v] of Object.entries(attrs)) e.setAttribute(a, v);
-  if (parent) parent.appendChild(e);
-  return e;
-}
 /* ---------- Connection: a phone loses it (tunnel, lift, switching Wi-Fi). Requests time out instead of hanging,
    and "no connection" is told apart from the server saying no, so only the first is retried by itself. ---------- */
 const netError = () => Object.assign(new Error("no connection"), { net: true });
@@ -720,13 +618,7 @@ function retryUnsent() {
   for (const p of [...pendingSays, ...[...sessionPending.values()].flat()]) if (p.status === "failed" && p.net) deliver(p);
 }
 
-/* ---------- Hub (the dispatcher) ---------- */
-const hub = { x: 0, y: 0, r: 30, g: el("g", { class: "hub off" }, gNodes) };
-el("circle", { r: hub.r }, hub.g);
-el("text", { y: 5 }, hub.g).textContent = "⚡";
-const hubLabel = el("text", { y: hub.r + 17 }, hub.g); hubLabel.textContent = "Switchboard";
-
-/* ---------- Session bubbles ---------- */
+/* ---------- Sessions ---------- */
 function attachCommand(s) {
   if (s.tmux) { const t = s.tmux.split(":")[0]; return t.startsWith("pk-") ? `pocket attach ${t}` : `sb attach ${t}`; }
   const env = s.profile !== "claude" ? `CLAUDE_CONFIG_DIR=~/.claude-${s.profile} ` : "";
@@ -734,168 +626,42 @@ function attachCommand(s) {
 }
 
 function updateSessions(list) {
-  const { w, h } = size();
   const seen = new Set();
   for (const s of list) {
     seen.add(s.sessionId);
-    let n = nodes.get(s.sessionId);
-    if (!n) {
-      const g = el("g", { class: "node" }, gNodes);
-      const say = el("g", { class: "say" }, $("says"));
-      const hit = el("g", { class: "hit" }, g);
-      const chip = el("g", { class: "chip-s" }, g);
-      const angle = Math.random() * Math.PI * 2;
-      n = { x: hub.x + Math.cos(angle) * 60, y: hub.y + Math.sin(angle) * 60, vx: 0, vy: 0, g,
-        pulse: el("circle", { class: "pulse" }, hit), track: el("circle", { class: "track" }, hit), arc: el("circle", { class: "arc" }, hit),
-        body: el("circle", { class: "body" }, hit), icon: el("text", { class: "icon" }, hit), dot: el("circle", { class: "unread", r: 6 }, hit),
-        askG: (() => { const a = el("g", { class: "askmark" }, hit); el("circle", { r: 10 }, a); el("text", { y: 4 }, a).textContent = "?"; return a; })(),
-        agentG: (() => { const a = el("g", { class: "agentmark" }, hit); el("rect", { rx: 9, height: 18, y: -9 }, a); el("text", { y: 4 }, a); el("title", {}, a); return a; })(),
-        name: el("text", { class: "name" }, g), chipBg: el("rect", { rx: 8, height: 17 }, chip), chipText: el("text", {}, chip), meta: el("text", { class: "meta" }, g),
-        say, sayBg: el("path", {}, say), sayText: el("text", {}, say) };
-      if (!hub.x) { n.x = w / 2 + (Math.random() - .5) * 200; n.y = h / 2 + (Math.random() - .5) * 200; }
-      g.addEventListener("pointerdown", (e) => { drag = { n, moved: false }; g.setPointerCapture(e.pointerId); e.stopPropagation(); });
-      g.addEventListener("pointerup", () => { if (drag && !drag.moved) clickNode(n); drag = null; });
-      // Hover previews are for a mouse; a finger opens a session by tapping.
-      g.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && hoverNode(n, true));
-      g.addEventListener("pointerleave", (e) => e.pointerType === "mouse" && hoverNode(n, false));
-      nodes.set(s.sessionId, n);
-    }
-    n.s = s; n.r = radius(s.contextTokens);
-    n.g.classList.remove("working", "needs-you", "idle", "stale"); n.g.classList.add(s.state);
-    n.g.classList.toggle("selected", selected === s.sessionId);
-    const r = n.r;
-    n.body.setAttribute("r", r); n.body.style.fill = s.color;
-    n.pulse.setAttribute("r", r + 3);
-    n.pulse.style.display = s.state === "working" || s.state === "needs-you" ? "" : "none";
-    // Context ring: how full this session's context is (red once it should be handed off).
-    const ringR = r + 6, circ = 2 * Math.PI * ringR;
-    n.track.setAttribute("r", ringR); n.arc.setAttribute("r", ringR);
-    n.arc.setAttribute("stroke-dasharray", `${(Math.min(100, s.contextPct) / 100) * circ} ${circ}`);
-    n.arc.classList.toggle("hot", s.needsHandoff);
-    n.icon.textContent = s.icon; n.icon.setAttribute("font-size", Math.round(r * 0.85)); n.icon.setAttribute("y", Math.round(r * 0.3));
-    const unread = isUnread(s);
-    n.dot.style.display = unread ? "" : "none"; n.dot.setAttribute("cx", r * 0.72); n.dot.setAttribute("cy", -r * 0.72);
-    // "?": it's waiting on you (permission dialog or a question in its last message).
-    n.askG.style.display = askOf(s) ? "" : "none"; n.askG.setAttribute("transform", `translate(${-r * 0.72},${-r * 0.72})`);
-    // "🤖 2": agents it has running, listed in the tooltip.
-    const agents = s.agents || [];
-    n.agentG.style.display = agents.length ? "" : "none";
-    if (agents.length) {
-      const label = `🤖${agents.length > 1 ? " " + agents.length : ""}`, w = agents.length > 1 ? 34 : 24;
-      n.agentG.querySelector("text").textContent = label; n.agentG.querySelector("rect").setAttribute("width", w); n.agentG.querySelector("rect").setAttribute("x", -w / 2);
-      n.agentG.querySelector("title").textContent = agentsTip(agents);
-      n.agentG.setAttribute("transform", `translate(${r * 0.72},${r * 0.72})`);
-    }
-    const shown = s.display || s.name;
-    n.name.textContent = shown.length > 26 ? shown.slice(0, 25) + "…" : shown;
-    n.name.setAttribute("y", r + 22);
-    // Status chip under the name.
-    const label = s.state === "needs-you" ? "needs you" : s.state;
-    if (n.chipText.textContent !== label) n.chipText.textContent = label;
-    const cw = label.length * 6.4 + 16;
-    n.chipBg.setAttribute("x", -cw / 2); n.chipBg.setAttribute("width", cw); n.chipBg.setAttribute("y", r + 28);
-    n.chipText.setAttribute("y", r + 40);
-    n.chipBg.setAttribute("class", `st-${s.state}`);
-    n.meta.textContent = `${k(Math.round(s.contextTokens / 1000))} · ${ago(s.lastActivity)}`; n.meta.setAttribute("y", r + 60);
-    (n.tip ??= el("title", {}, n.g)).textContent = `${s.name}${shown !== s.name ? ` (${shown})` : ""} · ${label} · ${Math.round(s.contextTokens / 1000)}k · ${short(s.cwd)}${s.doing ? "\n" + s.doing : ""}`;
-    // Speech bubble: what it's doing now (working) or how its last reply starts. Crowded map: only busy/unread ones.
-    const line = (s.doing || "").replace(/\s+/g, " ").trim();
-    const showSay = line && (list.length <= 5 || s.state === "working" || s.state === "needs-you" || unread);
-    n.say.style.display = showSay ? "" : "none";
-    if (showSay) {
-      // Up to ~60 characters, but never wider than 250px; the full line is in the hover tooltip.
-      let text = line.length > 60 ? line.slice(0, 59) + "…" : line;
-      if (n.sayText.textContent !== text) n.sayText.textContent = text;
-      while (n.sayText.getComputedTextLength() > 230 && text.length > 12) { text = text.slice(0, -4) + "…"; n.sayText.textContent = text; }
-      const tw = n.sayText.getComputedTextLength() + 20, top = -r - 14 - 26;
-      n.sayText.setAttribute("y", top + 17);
-      // Rounded box with a little tail pointing down at the circle.
-      const x0 = -tw / 2, x1 = tw / 2, y0 = top, y1 = top + 26, rr = 9;
-      n.sayBg.setAttribute("d", `M${x0 + rr},${y0} H${x1 - rr} Q${x1},${y0} ${x1},${y0 + rr} V${y1 - rr} Q${x1},${y1} ${x1 - rr},${y1} H8 L0,${y1 + 8} L-8,${y1} H${x0 + rr} Q${x0},${y1} ${x0},${y1 - rr} V${y0 + rr} Q${x0},${y0} ${x0 + rr},${y0} Z`);
-      n.say.classList.toggle("fresh", unread);
-    }
+    const n = nodes.get(s.sessionId) ?? {};
+    n.s = s; nodes.set(s.sessionId, n);
   }
-  // Stopped or removed sessions fade out on the next poll.
-  for (const [id, n] of nodes) if (!seen.has(id)) { n.g.classList.add("leaving"); n.say.remove(); setTimeout(() => n.g.remove(), 700); nodes.delete(id); if (selected === id) select(null); }
-
-  edges = [];
-  const all = [...nodes.values()];
-  for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
-    const a = all[i].s, b = all[j].s;
-    const group = a.spawnedBy && b.spawnedBy && a.spawnedBy.group === b.spawnedBy.group;
-    if (group || a.repo === b.repo) edges.push({ a: all[i], b: all[j], kind: group ? "group" : "repo" });
-  }
-  gEdges.replaceChildren(...edges.map((e) => (e.el = el("line", { class: `edge-${e.kind}` }))));
-
-  for (const st of ["working", "needs-you", "idle", "stale"]) $("c-" + st).textContent = list.filter((s) => s.state === st).length;
-  $("c-handoff").textContent = list.filter((s) => s.needsHandoff).length;
+  for (const id of nodes.keys()) if (!seen.has(id)) { nodes.delete(id); if (selected === id) select(null); }
   renderList(list);
   if (selected) renderPopupInfo();
 }
 
 const byName = (name) => [...nodes.values()].find((n) => n.s.name.toLowerCase() === name.toLowerCase());
 
-/* ---------- Routes: a request flies from the hub to its bubble ---------- */
-let routeLines = [];
+/* ---------- Routes and pulses: the session's row in the list flashes ---------- */
 const seenPulses = new Set();
+function flashRow(n, kind = "info") {
+  const r = n && document.querySelector(`#rows .srow-s[data-id="${CSS.escape(n.s.sessionId)}"]`);
+  if (!r) return;
+  r.classList.remove("flash", "flash-needs-you", "flash-continue", "flash-info"); void r.offsetWidth; r.classList.add("flash", `flash-${kind}`);
+  setTimeout(() => r.classList.remove("flash", `flash-${kind}`), 1500);
+}
 function updatePulses(list) {
   for (const p of list) {
     if (seenPulses.has(p.id)) continue;
     seenPulses.add(p.id);
     if (firstLoad || Date.now() - p.at > 15_000) continue; // only fresh ones, not what happened before this tab opened
-    for (const name of p.names) flashNode(byName(name), p.kind);
+    for (const name of p.names) flashRow(byName(name), p.kind);
   }
 }
-function flashNode(n, kind) {
-  if (!n) return;
-  const cls = `flash-${kind}`;
-  n.g.classList.remove(cls); void n.g.getBBox(); n.g.classList.add(cls);
-  setTimeout(() => n.g.classList.remove(cls), 1600);
-  const label = { "needs-you": "needs you", continue: "continue", info: "look" }[kind] ?? kind;
-  const tag = el("text", { class: `flashtag ${kind}`, x: n.x, y: n.y - n.r - 50 }, gFx);
-  tag.textContent = label;
-  setTimeout(() => (tag.style.opacity = 0), 1800); setTimeout(() => tag.remove(), 2400);
-}
-
+// Switchboard sent a session something: its row flashes. The open session never changes by itself.
 function updateRoutes(routes) {
-  const recent = routes.filter((r) => Date.now() - r.at < 30 * 60000);
-  routeLines = [];
-  for (const name of new Set(recent.map((r) => r.target))) {
-    const n = byName(name);
-    if (n) routeLines.push({ n, el: el("line", { class: "edge-route" }) });
-  }
-  gRoutes.replaceChildren(...routeLines.map((r) => r.el));
   for (const r of routes) {
     if (seenRoutes.has(r.id)) continue;
     seenRoutes.add(r.id);
-    if (!firstLoad) pendingPackets.push({ ...r, queuedAt: Date.now() });
+    if (!firstLoad) flashRow(byName(r.target));
   }
-  // A freshly opened tab follows the same active session as the others: the latest route of the last 30 minutes.
-  if (firstLoad && !selected && recent.length) followRoute(byName(recent.at(-1).target));
-}
-
-function flushPackets() {
-  for (let i = pendingPackets.length - 1; i >= 0; i--) {
-    const p = pendingPackets[i], n = byName(p.target);
-    if (n) { pendingPackets.splice(i, 1); fly(p, n); followRoute(n); }
-    else if (Date.now() - p.queuedAt > 90000) pendingPackets.splice(i, 1);
-  }
-}
-
-function fly(route, n) {
-  const dot = el("circle", { class: "packet", r: 7 }, gFx);
-  const start = performance.now(), dur = 900;
-  const step = (t) => {
-    const p = Math.min(1, (t - start) / dur), e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-    dot.setAttribute("cx", hub.x + (n.x - hub.x) * e); dot.setAttribute("cy", hub.y + (n.y - hub.y) * e);
-    if (p < 1) return requestAnimationFrame(step);
-    dot.remove();
-    n.g.classList.remove("hitting"); void n.g.getBBox(); n.g.classList.add("hitting");
-    const label = route.kind === "spawn" ? "＋ new session" : "→ " + (route.text.length > 40 ? route.text.slice(0, 39) + "…" : route.text);
-    const toast = el("text", { class: "toast", x: n.x, y: n.y - n.r - 12 }, gFx); toast.textContent = label;
-    setTimeout(() => (toast.style.opacity = 0), 3500); setTimeout(() => toast.remove(), 4200);
-  };
-  requestAnimationFrame(step);
 }
 
 /* ---------- Chat ---------- */
@@ -977,7 +743,7 @@ function msgHtml(c, { identity = true, askForm = false } = {}) {
   const long = isLong(c.text) && !expandedMsgs.has(c.id);
   const more = isLong(c.text) ? `<button type="button" class="more" data-id="${esc(c.id)}">${long ? "Show more" : "Show less"}</button>` : "";
   const time = c.pending ? pendingLabel(c) : clock(c.at);
-  const hide = c.pending ? "" : `<button type="button" class="hide" data-hide="${esc(c.id)}" title="Hide message (only here on the map; the conversation is untouched)" aria-label="Hide message">×</button>`;
+  const hide = c.pending ? "" : `<button type="button" class="hide" data-hide="${esc(c.id)}" title="Hide message (only on this page; the conversation is untouched)" aria-label="Hide message">×</button>`;
   const head = look ? `<div class="mhead">${chipHtml(look)}</div>` : "";
   const body = c.role === "you" ? mdPlain(c.text) : md(c.text);
   return `<div class="msg ${c.role}${tinted}${c.pending ? ` pending st-${c.status ?? "sending"}` : ""}${long ? " clamp" : ""}" data-group="${esc(group)}"${tint}>${head}<div class="body">${body}</div>${more}${c.role !== "notice" ? `<time>${time}</time>` : ""}${hide}</div>`;
@@ -1022,7 +788,7 @@ document.addEventListener("click", (e) => {
   if (chip) {
     e.preventDefault();
     const n = byName(chip.dataset.session);
-    if (n) { select(n.s.sessionId); setSticky(true); flashNode(n, "info"); }
+    if (n) { select(n.s.sessionId); flashRow(n); }
     return;
   }
   const copy = e.target.closest?.(".code .copy");
@@ -1263,8 +1029,6 @@ function renderChat(d) {
 
 function renderDispatcher(d) {
   const notice = { html: "" };
-  hub.g.classList.toggle("off", !d.running);
-  hub.g.classList.toggle("working", d.state === "working");
   $("sdot").className = "sdot " + (d.running ? d.state || "" : "");
   $("status").textContent = !d.running ? "not running" : d.needsTrust ? "waiting for first-run trust prompt" :
     `${d.state === "working" ? "routing…" : d.state === "needs-you" ? "needs you" : "listening"} · ${Math.round(d.contextTokens / 1000)}k context${d.attach ? " · " + d.attach : ""}`;
@@ -1740,7 +1504,7 @@ function showHfButtons() {
   $("kwbtn").textContent = `“${keywords.split(",")[0].trim()}”${keywords.includes(",") ? " …" : ""}`;
 }
 
-/* Several tabs can show the map, but only one may own the hands-free mic (no double recording or sending).
+/* Several tabs can show the page, but only one may own the hands-free mic (no double recording or sending).
    The owner writes a heartbeat to localStorage; tabs tell each other about take-overs on a BroadcastChannel. */
 const TAB = Math.random().toString(36).slice(2);
 const channel = "BroadcastChannel" in window ? new BroadcastChannel("switchboard") : null;
@@ -1906,9 +1670,9 @@ showHfButtons();
 showGate();
 if (hfWanted) startHandsFree();
 
-/* ---------- Chat width: drag its right edge (remembered, shared by all tabs); optional hover-widen ---------- */
-let hoverWiden = false, chatWidth = 380;
-try { hoverWiden = localStorage.getItem("sb-hoverwiden") === "1"; chatWidth = Number(localStorage.getItem("sb-chat-w")) || 380; } catch {}
+/* ---------- Chat width: drag its right edge (remembered, shared by all tabs) ---------- */
+let chatWidth = 380;
+try { chatWidth = Number(localStorage.getItem("sb-chat-w")) || 380; } catch {}
 const clampWidth = (w) => Math.round(Math.max(300, Math.min(innerWidth - 320, w)));
 function applyWidth(w) {
   chatWidth = clampWidth(w);
@@ -1916,17 +1680,10 @@ function applyWidth(w) {
   document.body.style.setProperty("--chat-w", chatWidth + "px");
 }
 applyWidth(chatWidth);
-let wideTimer;
-const setWide = (on) => document.body.classList.toggle("chat-wide", on && hoverWiden);
-const showPin = () => { toggleBtn("pin", hoverWiden); setWide(false); };
-$("pin").onclick = () => { hoverWiden = !hoverWiden; try { localStorage.setItem("sb-hoverwiden", hoverWiden ? "1" : "0"); } catch {} showPin(); };
-// Small delays so passing over it on the way to a bubble doesn't make the layout jump.
-$("chat").addEventListener("mouseenter", () => { clearTimeout(wideTimer); wideTimer = setTimeout(() => setWide(true), 180); });
-$("chat").addEventListener("mouseleave", () => { clearTimeout(wideTimer); wideTimer = setTimeout(() => setWide(false), 350); });
 $("resizer").addEventListener("pointerdown", (e) => {
   e.preventDefault();
   $("resizer").setPointerCapture(e.pointerId);
-  document.body.classList.add("dragging"); document.body.classList.remove("chat-wide");
+  document.body.classList.add("dragging");
   const move = (ev) => applyWidth(ev.clientX);
   const up = () => {
     $("resizer").removeEventListener("pointermove", move);
@@ -1938,17 +1695,15 @@ $("resizer").addEventListener("pointerdown", (e) => {
   $("resizer").addEventListener("pointerup", up, { once: true });
 });
 $("resizer").addEventListener("dblclick", () => { applyWidth(380); try { localStorage.setItem("sb-chat-w", 380); } catch {} });
-// Other tabs: follow a width or hover setting changed here.
+// Other tabs: follow a width changed here.
 addEventListener("storage", (e) => {
   if (e.key === "sb-chat-w" && e.newValue) applyWidth(Number(e.newValue));
-  if (e.key === "sb-hoverwiden") { hoverWiden = e.newValue === "1"; showPin(); }
 });
 addEventListener("resize", () => applyWidth(chatWidth));
 
-/* ---------- Settings pane (right side of the map), collapsible, remembered ---------- */
-// Hovering opens it; leaving closes it shortly after. Clicking inside (or the button) keeps it open until you
-// click outside. The kept-open state is remembered.
-let settingsSticky = false, settingsHover = false, settingsTimer;
+/* ---------- Settings (under the session list), collapsible ---------- */
+// The button opens it; clicking outside closes it. Open or closed is remembered.
+let settingsSticky = false, settingsHover = false;
 try { settingsSticky = localStorage.getItem("sb-settings-open") === "1"; } catch {}
 const showSettings = () => {
   const open = settingsSticky || settingsHover;
@@ -1957,8 +1712,6 @@ const showSettings = () => {
 };
 const setSettingsSticky = (on) => { settingsSticky = on; try { localStorage.setItem("sb-settings-open", on ? "1" : "0"); } catch {} showSettings(); };
 $("settingsbtn").onclick = (e) => { e.stopPropagation(); setSettingsSticky(!settingsSticky); if (!settingsSticky) { settingsHover = false; showSettings(); } };
-$("settings").addEventListener("pointerenter", () => { clearTimeout(settingsTimer); settingsTimer = setTimeout(() => { settingsHover = true; showSettings(); }, HOVER.settingsOpenMs); });
-$("settings").addEventListener("pointerleave", () => { clearTimeout(settingsTimer); settingsTimer = setTimeout(() => { settingsHover = false; showSettings(); }, HOVER.settingsCloseMs); });
 $("settingsbody").addEventListener("pointerdown", () => { if (!settingsSticky) setSettingsSticky(true); });
 document.addEventListener("pointerdown", (e) => { if (settingsSticky && !$("settings").contains(e.target) && !e.target.closest?.("dialog")) { settingsHover = false; setSettingsSticky(false); } });
 showSettings();
@@ -1988,14 +1741,10 @@ addEventListener("storage", (e) => {
   if (e.key === "sb-dense") { dense = e.newValue === "1"; showView(); }
   if (e.key === "sb-gate") { try { Object.assign(gate, JSON.parse(e.newValue || "{}")); } catch {} showGate(); }
 });
-showPin();
 document.body.addEventListener("transitionend", (e) => { if (e.target === document.body) mainComposer.autosize(); });
 
-/* ---------- Session popup: details + its own chat and mic ---------- */
-/* The "active" session: when Switchboard routes something to a session, its popup opens (in every open
-   tab, since they all see the same routes) so you can watch the reply. It never takes focus, and it
-   doesn't replace a popup you're typing in, reading back in, or have pinned. */
-let popupPinned = false, phone = false;
+/* ---------- The open session: details + its own chat and mic (right column; a full screen sheet on a phone) ---------- */
+let phone = false;
 
 /* Unread: a reply newer than the last time you looked at that session (shared by all tabs). */
 let seenAt = {};
@@ -2009,70 +1758,19 @@ function markSeen(s) { if (s?.lastReplyAt && seenAt[s.sessionId] !== s.lastReply
 function saveSeen() { try { localStorage.setItem("sb-seen", JSON.stringify(seenAt)); } catch {} }
 addEventListener("storage", (e) => { if (e.key === "sb-seen") { try { seenAt = JSON.parse(e.newValue || "{}"); } catch {} } });
 
-/* Popups on hover: hovering a circle opens its popup; moving into the popup keeps it; leaving both closes it
-   after a moment. Clicking the circle or inside the popup makes it stick until you click outside or press Esc. */
-// Hover timing: open quickly, close with a grace period so moving from a circle into its popup works.
-const HOVER = { openMs: 160, closeMs: 450, settingsOpenMs: 120, settingsCloseMs: 450 };
-let hoverTimer, closeTimer, overNode = null;
 // Last chat seen per session, so a popup shows its conversation at once instead of "Loading…".
 const chatCache = new Map();
 const prefetchChat = (id) => fetch(`/api/session?id=${encodeURIComponent(id)}`).then((r) => r.json()).then((d) => chatCache.set(id, d)).catch(() => {});
-function setSticky(on) {
-  popupPinned = on;
-  const b = $("p-pin"); if (b) { b.classList.toggle("on", on); b.textContent = on ? "Pinned" : "Pin"; }
-}
-function hoverNode(n, entering) {
-  clearTimeout(hoverTimer);
-  if (entering) {
-    overNode = n; clearTimeout(closeTimer);
-    if (drag) return;
-    if (!chatCache.has(n.s.sessionId)) prefetchChat(n.s.sessionId);
-    hoverTimer = setTimeout(() => { if (selected !== n.s.sessionId && !popupPinned) select(n.s.sessionId, { hover: true }); }, HOVER.openMs);
-  } else { overNode = null; scheduleClose(); }
-}
-function scheduleClose() {
-  clearTimeout(closeTimer);
-  closeTimer = setTimeout(() => { if (deck) return; if (selected && !popupPinned && !overNode && !panel.matches(":hover") && !popupBusy()) select(null); }, HOVER.closeMs);
-}
-const popupBusy = () => panel.contains(document.activeElement) || !!$("p-input")?.value.trim() || !!(rec && popupComposer && rec.owner === popupComposer);
-function clickNode(n) {
-  if (selected === n.s.sessionId && popupPinned) return select(null);
-  if (selected !== n.s.sessionId) select(n.s.sessionId);
-  setSticky(true);
-}
-panel.addEventListener("pointerenter", () => clearTimeout(closeTimer));
-panel.addEventListener("pointerleave", scheduleClose);
-panel.addEventListener("pointerdown", () => setSticky(true));
 document.addEventListener("pointerdown", (e) => { const d = $("p-details"); if (deck && d?.open && !d.contains(e.target)) d.open = false; });
-document.addEventListener("pointerdown", (e) => {
-  if (!selected || !popupPinned || deck) return;
-  if (panel.contains(e.target) || e.target.closest?.(".node")) return;
-  select(null);
-});
-addEventListener("keydown", (e) => { if (e.key === "Escape" && selected && !deck) select(null); });
-
-function followRoute(n) {
-  // On a phone a popup is the whole screen: never open one by itself.
-  if (!n || selected === n.s.sessionId || phone) return;
-  if (deck) { const r = document.querySelector(`#rows .srow-s[data-id="${CSS.escape(n.s.sessionId)}"]`); if (r) { r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); } return; }
-  if (selected && nodes.has(selected)) {
-    const busy = popupPinned || panel.contains(document.activeElement) || $("p-input")?.value.trim() ||
-      (rec && popupComposer && rec.owner === popupComposer) || ($("p-newpill") && !$("p-newpill").hidden);
-    if (busy) return;
-  }
-  select(n.s.sessionId, { auto: true });
-}
 
 let popup = { id: null, pending: [], chat: [], canType: false };
 // The popup's Details (context bar, terminal command): closed unless you opened it; remembered.
 let detailsOpen = false;
 try { detailsOpen = localStorage.getItem("sb-details") === "1"; } catch {}
 function setDetailsOpen(on) { detailsOpen = on; try { localStorage.setItem("sb-details", on ? "1" : "0"); } catch {} }
-function select(id, { auto = false, hover = false } = {}) {
-  popupPinned = false;
+function select(id) {
   if (rec && popupComposer && rec.owner === popupComposer) popupComposer.stop({ send: false });
   selected = id;
-  for (const n of nodes.values()) n.g.classList.toggle("selected", n.s.sessionId === id);
   for (const r of document.querySelectorAll("#rows .srow-s")) r.classList.toggle("on", r.dataset.id === id);
   stopTerm(); ctrlcArmed = 0; changesRun++; changesFile = null;
   popup = { id, pending: id ? pendingFor(id) : [], chat: [], canType: !!chatCache.get(id)?.canType, view: sheetView };
@@ -2081,14 +1779,11 @@ function select(id, { auto = false, hover = false } = {}) {
   if (!n) { panel.classList.remove("open", "termview", "changesview"); panel.innerHTML = ""; return; }
   panel.innerHTML = `
     <button class="close" onclick="closePopup()" aria-label="Close"><span>×</span></button>
-    <button class="grow" type="button" onclick="panel.classList.toggle('big');this.textContent=panel.classList.contains('big')?'Smaller':'Bigger'" title="Make this popup bigger">Bigger</button>
-    <button class="pinpop" type="button" id="p-pin" onclick="event.stopPropagation();setSticky(!popupPinned)" title="Keep this popup open; hovering others and new routes won't switch it">Pin</button>
     <div class="phead">
     <h2 id="p-name"></h2>
     <div class="label" id="p-meta"></div>
     <div id="p-agents"></div>
     <div class="pactions" id="p-actions"></div>
-    ${auto ? `<div class="activetag">Active: Switchboard just sent it a message</div>` : ""}
     <details id="p-details"${detailsOpen && !deck ? " open" : ""} ontoggle="deck || setDetailsOpen(this.open)"><summary>Details</summary><div id="p-info"></div></details>
     </div>
     <div class="pview" id="p-view"><button type="button" data-view="chat">Chat</button><button type="button" data-view="term" title="What its terminal shows now (read-only)">Terminal</button><button type="button" data-view="changes" title="Files changed in its folder (git), and their diffs">Changes</button><button type="button" class="tz" data-tz="-1" title="Smaller terminal text">A−</button><button type="button" class="tz" data-tz="1" title="Bigger terminal text">A+</button></div>
@@ -2195,13 +1890,13 @@ function toggleMark(id) {
   const n = nodes.get(id); if (!n) return;
   if (isMarked(n.s)) delete markedWait[id]; else markedWait[id] = n.s.lastReplyAt ?? 0;
   saveMarks();
-  n.askG.style.display = askOf(n.s) ? "" : "none";
+  renderList(lastList); // its ? on the row and its "Waiting on you" card
   if (selected === id) renderQuick(n.s);
 }
 addEventListener("storage", (e) => {
   if (e.key !== "sb-markwait") return;
   try { markedWait = JSON.parse(e.newValue || "{}"); } catch {}
-  for (const n of nodes.values()) n.askG.style.display = askOf(n.s) ? "" : "none";
+  renderList(lastList);
   const n = nodes.get(selected); if (n) renderQuick(n.s);
 });
 
@@ -2576,75 +2271,8 @@ document.addEventListener("click", async (e) => {
   } catch (err) { quickNote(`Not sent: ${err.message}`, true); }
 });
 
-function placePopup() {
-  const n = nodes.get(selected);
-  if (deck) { panel.style.left = panel.style.top = ""; return; }
-  if (!n || innerWidth <= 860) return;
-  const { w, h } = size(), pw = panel.offsetWidth, ph = panel.offsetHeight;
-  // Keep clear of the settings pane when it's open.
-  const right = $("settings").classList.contains("open") ? $("settings").offsetLeft - 10 : w - 8;
-  let x = n.x + n.r + 18;
-  if (x + pw > right) x = n.x - n.r - 18 - pw;
-  x = Math.max(8, Math.min(right - pw, x));
-  const y = Math.max(52, Math.min(h - ph - 8, n.y - 80));
-  panel.style.left = x + "px"; panel.style.top = y + "px";
-}
-
-/* ---------- Layout ---------- */
-svg.addEventListener("pointermove", (e) => {
-  if (!drag) return;
-  const r = svg.getBoundingClientRect();
-  drag.moved = true; drag.n.x = e.clientX - r.left; drag.n.y = e.clientY - r.top; drag.n.vx = drag.n.vy = 0;
-});
-svg.addEventListener("pointerup", () => (drag = null));
-svg.addEventListener("pointerdown", (e) => { if (e.target === svg) select(null); });
-
-function tick() {
-  // Nothing to lay out while the map isn't visible (phone on another tab, or the page in the background).
-  if (document.hidden || (phone && document.body.dataset.tab !== "map")) { flushPackets(); return requestAnimationFrame(tick); }
-  const { w, h } = size();
-  // Centre the layout in the free part of the map (left of the settings pane when it is open).
-  hub.x = ($("settings").classList.contains("open") ? $("settings").offsetLeft : w) / 2; hub.y = h / 2 + 16;
-  const list = [...nodes.values()];
-  const bodies = [...list, hub];
-  for (const a of list) {
-    a.vx += (hub.x - a.x) * 0.0015; a.vy += (hub.y - a.y) * 0.0015;
-    for (const b of bodies) {
-      if (a === b) continue;
-      const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) || 1;
-      // Labels sit above (speech) and below (name, chip): keep more room vertically than sideways.
-      const min = a.r + b.r + 60 + 50 * Math.min(1, Math.abs(dy) / d);
-      const push = d < min ? (min - d) * 0.08 : 4000 / (d * d);
-      a.vx += (dx / d) * push; a.vy += (dy / d) * push;
-    }
-  }
-  for (const e of edges) {
-    const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx, dy) || 1;
-    const rest = e.a.r + e.b.r + (e.kind === "group" ? 50 : 80);
-    const f = (d - rest) * (e.kind === "group" ? 0.012 : 0.006);
-    e.a.vx += (dx / d) * f; e.a.vy += (dy / d) * f; e.b.vx -= (dx / d) * f; e.b.vy -= (dy / d) * f;
-  }
-  for (const n of list) {
-    if (drag && drag.n === n) continue;
-    n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy;
-    const right = $("settings").classList.contains("open") ? $("settings").offsetLeft - 16 : w - 8;
-    n.x = Math.max(n.r + 8, Math.min(right - n.r, n.x));
-    n.y = Math.max(n.r + 96, Math.min(h - n.r - 70, n.y));
-  }
-  hub.g.setAttribute("transform", `translate(${hub.x},${hub.y})`);
-  for (const n of list) {
-    n.g.setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`);
-    n.say.setAttribute("transform", `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`);
-  }
-  for (const e of edges) { e.el.setAttribute("x1", e.a.x); e.el.setAttribute("y1", e.a.y); e.el.setAttribute("x2", e.b.x); e.el.setAttribute("y2", e.b.y); }
-  for (const r of routeLines) { r.el.setAttribute("x1", hub.x); r.el.setAttribute("y1", hub.y); r.el.setAttribute("x2", r.n.x); r.el.setAttribute("y2", r.n.y); }
-  flushPackets();
-  placePopup();
-  requestAnimationFrame(tick);
-}
-
 async function poll() {
-  // Each step on its own: one failing part must never stop the map from refreshing.
+  // Each step on its own: one failing part must never stop the page from refreshing.
   try { state = await (await request("/api/state", { cache: "no-store" }, 8000)).json(); setOnline(true); if (firstLoad) retryUnsent(); }
   catch { setOnline(false); $("status").textContent = "no connection to the Mac, retrying…"; setTimeout(poll, 2000); return; }
   for (const step of [() => updateSessions(state.sessions), () => renderDispatcher(state.dispatcher), () => updateRoutes(state.dispatcher.routes || []), () => updatePulses(state.pulses || []), () => renderTrustWaits(state.trustWaits || [])]) {
@@ -2657,8 +2285,8 @@ async function poll() {
 function renderTrustWaits(list) {
   const html = list.map((w) => `<div class="trustwait" title="${esc(short(w.cwd))}">⏳ <b>${esc(w.name)}</b> waits at the trust prompt
     <button type="button" class="newbtn" data-trust="${esc(w.tmux)}">Trust it</button></div>`).join("");
-  for (const id of ["trustwaits-map", "trustwaits-list"]) {
-    const box = $(id);
+  {
+    const box = $("trustwaits-list");
     if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
   }
 }
@@ -2670,27 +2298,18 @@ document.addEventListener("click", async (e) => {
 });
 
 /* ---------- Phone ---------- */
-/* Layout on a computer: "list" (the desk: chat | sessions | the open session) or "map" (bubbles + popups). */
-let layout = "list";
-try { layout = new URLSearchParams(location.search).get("layout") || localStorage.getItem("sb-layout") || "list"; } catch {}
-if (layout !== "map") layout = "list";
-let deck = false;
+let deck = false; // the desk layout: everything wider than a phone
 function setPhone(force = false) {
-  const on = matchMedia("(max-width: 700px)").matches, desk = !on && layout === "list";
+  const on = matchMedia("(max-width: 700px)").matches, desk = !on;
   if (on === phone && desk === deck && !force) return;
   phone = on; deck = desk;
   document.body.classList.toggle("phone", on);
   document.body.classList.toggle("deck", desk);
-  $("layoutbtn").textContent = layout;
-  // The settings live in the Settings tab on a phone, in the session list on the desk, on the map otherwise.
-  // The session sheet must not live inside the map pane: that pane is hidden on the other tabs (and on the desk).
-  if (on || desk) document.body.appendChild(panel); else $("mapwrap").insertBefore(panel, $("map").nextSibling);
+  // The settings live in the Settings tab on a phone, under the session list on the desk.
   if (on) $("more").insertBefore($("settings"), $("remoteinfo"));
-  else if (desk) $("list").appendChild($("settings"));
-  else $("mapwrap").insertBefore($("settings"), panel.nextSibling);
+  else $("list").appendChild($("settings"));
   if (desk && !selected && lastList.length) renderList(lastList);
-  $("input").placeholder = on ? "Say or type…" : desk ? "Say or type… @name sends to one session" : "Say or type… (Enter sends, Shift+Enter new line)";
-  if (desk) panel.style.left = panel.style.top = "";
+  $("input").placeholder = on ? "Say or type…" : "Say or type… @name sends to one session";
   if (on) setTab(document.body.dataset.tab || "chat");
 }
 function setTab(tab) {
@@ -2698,13 +2317,8 @@ function setTab(tab) {
   for (const b of $("tabs").querySelectorAll("button")) b.classList.toggle("on", b.dataset.tab === tab);
   try { sessionStorage.setItem("sb-tab", tab); } catch {}
 }
-$("layoutbtn").addEventListener("click", () => {
-  layout = layout === "list" ? "map" : "list";
-  try { localStorage.setItem("sb-layout", layout); } catch {}
-  setPhone(true);
-});
 $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setTab(b.dataset.tab); });
-// ?tab=list|map|more|chat opens that tab (handy for a home screen shortcut); else the last one in this tab.
+// ?tab=list|more|chat opens that tab (handy for a home screen shortcut); else the last one in this tab.
 try { document.body.dataset.tab = new URLSearchParams(location.search).get("tab") || sessionStorage.getItem("sb-tab") || "chat"; } catch {}
 function closePopup() {
   if (phone && history.state?.sb === "session") history.back(); // popstate closes it
@@ -2723,7 +2337,7 @@ function renderAgents(s) {
   if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
 }
 
-/* The Sessions tab: everything on the map as a list, the ones waiting on you first. */
+/* The session list (a column on the desk, a tab on a phone): waiting on you first. */
 const RANK = { "needs-you": 0, working: 2, idle: 3, stale: 4 };
 let lastList = [];
 function renderList(list) {
@@ -2783,7 +2397,7 @@ function renderFolders() {
     || `<div class="hint">${q ? "No folder matches." : "No folders found."}</div>`;
   if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
 }
-$("newbtn").onclick = $("newbtn-list").onclick = () => openNew();
+$("newbtn-list").onclick = () => openNew();
 $("ns-close").onclick = () => closeNew();
 $("ns-change").onclick = () => newStep("pick");
 $("ns-filter").addEventListener("input", renderFolders);
@@ -2825,7 +2439,6 @@ matchMedia("(max-width: 700px)").addEventListener("change", () => { setPhone(); 
 
 restoreOutbox();
 poll();
-tick();
 </script>
 </body>
 </html>

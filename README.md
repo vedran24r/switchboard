@@ -3,9 +3,10 @@
 **One voice channel for many Claude Code sessions.**
 
 You talk (or type) to one dispatcher session, **Switchboard**. It splits what you said into tasks, sends each to the
-session it belongs to (or starts a new one in the right folder), and answers in a line per task. A **map page** shows every
-live session on this Mac as a circle: size = context, colour = state. Hover or click a circle for its chat, answer its
-questions with one click, or reply to it directly. The same page works on a phone.
+session it belongs to (or starts a new one in the right folder), and answers in a line per task. One **page** holds it all: the
+Switchboard chat on the left, every live session on this Mac in a list in the middle, and the session you picked open on
+the right, with its chat, terminal and changes. Questions sessions ask you show as cards in the chat, answered with one
+click. The same page works on a phone.
 
 No build step, no npm dependencies: Node runs the TypeScript directly. Nothing listens beyond `127.0.0.1`.
 
@@ -37,7 +38,7 @@ sb ls [--json]                # every live session: state, context (! = hand off
 sb say "what's waiting on me?"            # type into the dispatcher from a terminal
 sb spawn --cwd ~/Projects/x --name "short name" [--group G] "first task"   # start a session (guarded)
 sb send "PZ" "check the inventory"        # type into a session by name (profiles in sendProfiles only)
-sb pulse "PZ" "Misc" --kind needs-you     # pulse those circles on the map (needs-you | continue | info)
+sb pulse "PZ" "Misc" --kind needs-you     # flash those sessions' rows on the page (needs-you | continue | info)
 sb remote on|off|status       # the map on your phone over Tailscale (see "Reaching it")
 sb run [claude args...]       # start Claude Code in Switchboard's tmux, so the map/phone can type into it
 sb attach NAME                # reattach to an sb-* session; sb sessions lists them
@@ -57,8 +58,8 @@ Switchboard's own tmux server (`tmux -L switchboard`, settings in `tmux.conf`) a
 Sessions started from the map or the phone (`sb spawn`, or **＋ New**) go to Pocket if it's running, otherwise to this
 same tmux, started through your login shell.
 
-### Starting a session from the map or phone (＋ New)
-**＋ New session** (bottom left of the map) or **＋ New** in the phone's Sessions tab:
+### Starting a session from the page or phone (＋ New)
+**＋ New** at the top of the session list (the Sessions tab on a phone):
 1. Pick a folder. Recent ones come first (where sessions run now, and ones Switchboard started), then every folder in
    `~/Projects`, `~/WebstormProjects` and `~/GameProjects`. Folders in `blocked` are never listed.
 2. Give it a name (optional: the folder's name otherwise) and the first prompt, then **Start session**.
@@ -66,29 +67,34 @@ same tmux, started through your login shell.
 It goes through the same guards as `sb spawn` (blocked folders, `maxLiveSpawned`, unique names); a refusal is shown as
 it is. By hand: `sb spawn --cwd ~/Projects/x --name "x" "first task"`.
 
-In a folder Claude hasn't opened before, the new session first asks "trust this folder?" and isn't on the map yet.
-It shows as a grey ⏳ row (above ＋ New on the map, at the top of the phone's Sessions list) with **Trust it**.
+In a folder Claude hasn't opened before, the new session first asks "trust this folder?" and isn't in the list yet.
+It shows as a grey ⏳ row at the top of the session list with **Trust it**.
 By hand: `sb attach <sb-… name>` (or `tmux -L pocket attach -t pk-…`) and answer it there.
 
-## Using the map
+## Using the page
+Three columns: the Switchboard chat (drag its right edge to resize), the session list, and the open session.
 - **Chat** (left): talk to Switchboard.
   - Replies render as Markdown: headings, lists, tables, code with Copy, links. Message text is always escaped.
   - Tool calls between two messages fold into one line ("▸ 9 tool calls: Bash ×6, get_issue"); click to see each,
     then click one for its details. Bash lines show the call's description, or the real command (no `cd <folder> &&`).
   - Lines about a session carry its coloured chip. Click the chip to open that session.
-- **Circles** (right):
-  - **Look:** an icon and colour by folder (`domains`), a status chip, a ring for how full the context is (red = hand
-    it off), and a speech bubble with what it's doing.
-  - **Marks:** a red dot means an unread reply. A yellow **?** means it's waiting on you. A **🤖** (or 🤖 2, 🤖 3…) means
-    it has agents running. Hover it for the list, or see "🤖 2 agents running" in its popup (tap for the list on a phone).
+  - **Waiting on you:** a card at the top for each session that asks you something, with its question and its answer
+    buttons (Yes / No, the numbers, a picker's options). **Open** (or **Answer the form →**) opens it on the right.
+  - **`@name message`** sends the message straight to that session as your own input, not through Switchboard. Names
+    are suggested as you type `@…`; a name that matches no session goes to Switchboard unchanged.
+- **Session list** (middle): waiting on you first, then unread, working, idle, stale. Each row has the session's icon and
+  colour (by folder, `domains`), its status, context size, last activity and what it's doing.
+  - **Marks:** a red dot means an unread reply. A yellow **?** means it's waiting on you. A **🤖** (🤖2, 🤖3…) means it
+    has agents running (hover for the list). Context over the hand-off limit shows in red.
   - **Names:** automatic names (`<folder>-93`) show as the ticket in the folder (`ABC-12`); the real name is in the tooltip.
-- **Popups:** hover a circle to peek, click to keep it open (or **Pin** it), Esc or click outside to close.
-  - **Header:** state, context size and %, folder and last activity. **Details** (context bar, the command to open it in
-    a terminal) is closed unless you open it.
-  - **Active session:** when Switchboard routes something, that session's popup opens by itself. It never replaces one
-    you're typing in, scrolled back in, or have pinned.
-- **Reply directly:** "Reply to this session directly…" types into that session (tmux sessions only).
-- **Chat / Terminal:** the toggle in a popup (or phone sheet) switches to a read-only view of its terminal, colours and
+  - When Switchboard sends a session something (or points at it with `sb pulse`), its row flashes. The open session
+    never changes by itself.
+  - **⚙ Settings** sits under the list.
+- **The open session** (right): click a row to switch.
+  - **Header** (one line): name, state, context size and %, folder, last activity, Rename / End, and **Details** (context
+    bar, the command to open it in a terminal) as a dropdown.
+- **Reply directly:** the box at the bottom of the open session types into it (tmux sessions only).
+- **Chat / Terminal:** the toggle in the open session (or phone sheet) switches to a read-only view of its terminal, colours and
   all (`tmux capture-pane -e`, refreshed every second while it's showing, every 400 ms while a picker or permission
   dialog is on it). Under it, a **Type text** box types your text into its terminal, then Enter. It stays at the bottom unless you scroll up;
   long lines scroll sideways. Remembered per browser. Off for `blocked` folders.
@@ -100,7 +106,7 @@ By hand: `sb attach <sb-… name>` (or `tmux -L pocket attach -t pk-…`) and an
 - **Quick keys:** **■ Stop** (= Esc), ↑ ↓ ← →, Enter, Space, Tab, ⇧Tab, Esc, Ctrl+C (tap twice), 1–9, pressed in its
   terminal. The row wraps, so every key is on screen on a phone too. Chips, keys and Type text are tmux sessions only,
   and not in `blocked` folders.
-- **Session actions** (under the name in a popup or phone sheet; only where they apply):
+- **Session actions** (in the header of the open session or phone sheet; only where they apply):
   - **Rename:** asks for a name and types `/rename <name>` into it (tmux sessions, not `blocked` folders).
   - **End:** after a confirm, closes its tmux session (`tmux kill-session`), so Claude Code exits there; the conversation
     stays resumable. Only `sb-*` (our tmux) and `pk-*` (Pocket's) sessions. By hand: `tmux -L switchboard kill-session -t <name>`.
@@ -124,10 +130,10 @@ By hand: `sb attach <sb-… name>` (or `tmux -L pocket attach -t pk-…`) and an
 - **Spelling:** session names and `vocabulary` are hints for Whisper. `corrections` fixes the rest (heard → meant).
 
 ### Questions and quick replies
-A circle gets a **?** when the session is waiting on you:
-- **Permission dialog** on its screen: the popup shows its options, and a click presses that number.
+A session gets a **?** (and a card in the chat) when it's waiting on you:
+- **Permission dialog** on its screen: the card and the open session show its options, and a click presses that number.
 - **Question picker** (AskUserQuestion): the session counts as *needs you* (the ?, the yellow chip, the phone badge) while
-  a question is open, and also while a picker is visible on its screen. In the popup or phone sheet the question is a
+  a question is open, and also while a picker is visible on its screen. In the open session or phone sheet the question is a
   yellow card with a **form**: one block per question, a radio button per option (tick boxes for "pick any"), an
   **Other** field for your own words, and one **Submit answers**. Submit presses the keys in the real picker for you
   (↓ to each option, Space for tick boxes, your text on its "Type something" row, Enter, then Submit on the review step)
@@ -155,7 +161,7 @@ Nothing is ever sent by itself: a click types the answer into that session's ter
 - **Not delivered:** shows the session and the reason, with **Retry** and **Discard**. If the session has ended, it says
   so and has no Retry.
 - **Not picked up yet:** not read within 2 min of the session being idle. Also has **Retry** and **Discard**.
-- **Hide:** any line can be hidden with × (only on the map).
+- **Hide:** any line can be hidden with × (only on this page; the conversation is untouched).
 - **Images:** paste, drop, or 📎. They're scaled down if huge, saved to `~/.switchboard/uploads/switchboard/`, and sent as
   `[image: /path]`. Old ones are deleted after `uploadKeepDays`.
 - **Several tabs:** they share the same state and settings. Only one tab owns the hands-free mic (**Use mic here**
@@ -163,10 +169,10 @@ Nothing is ever sent by itself: a click types the answer into that session's ter
 
 ### Settings (⚙)
 Hands-free, mic, stop after silence, send when done, language, send keyword, voice commands, noise gate, sensitivity,
-calibrate, hover widen chat, collapse long messages, show tool activity, density. All are remembered.
+calibrate, collapse long messages, show tool activity, density. All are remembered.
 
 ## Phone and other computers
-- **Phone layout:** tabs at the bottom (Chat, Sessions, Map, Settings). Sessions lists the ones waiting on you first,
+- **Phone layout:** tabs at the bottom (Chat, Sessions, Settings). Sessions lists the ones waiting on you first,
   with a badge. A session opens full screen, and Back closes it. Add it to the home screen for a full-screen app;
   `?tab=list` opens a tab directly.
 - **Losing the connection:** a red "No connection" pill shows, and requests time out instead of hanging.

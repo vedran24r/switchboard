@@ -13,10 +13,10 @@
 <h1>Switchboard browser tests</h1>
 <p>Runs against a test server with fake sessions (<code>npm test</code>). Nothing is sent anywhere.</p>
 <ol id="out"></ol>
-<iframe id="a" src="/?layout=map"></iframe>
+<iframe id="a" src="/"></iframe>
 <script>
 /*
- * Every check runs INSIDE the map page (frame A, and frame B for the two-tab checks) via the frame's own
+ * Every check runs INSIDE the page (frame A, and frame B for the two-tab checks) via the frame's own
  * eval, so it can use the page's functions and state directly. Sending is stubbed: sayText() only records.
  */
 const results = [];
@@ -43,6 +43,7 @@ const HELPERS = () => {
     assert(cond, msg) { if (!cond) throw new Error(msg); },
     eq(a, b, msg) { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); },
     node: (name) => [...nodes.values()].find((n) => n.s.name === name),
+    row: (name) => document.querySelector(`#rows .srow-s[data-id="${CSS.escape(T.node(name).s.sessionId)}"]`),
     sent: [],
     async audio(file) {
       const b64 = await (await fetch(`/test/${file}`)).text();
@@ -70,52 +71,52 @@ const HELPERS = () => {
   await sleep(2500);
   await run(A, HELPERS);
 
-  await check("map draws every fake session (dispatcher is the hub, not a bubble)", A, async () => {
+  await check("the list shows every fake session (the dispatcher is not a row)", A, async () => {
     for (let i = 0; i < 20 && nodes.size < 7; i++) await T.sleep(250);
-    T.eq([...nodes.values()].map((n) => n.s.name).sort(), ["Beta", "Client", "Compacted", "Old", "Waiting", "Zomb", "repo-abc-12-93"], "bubbles");
+    T.eq([...nodes.values()].map((n) => n.s.name).sort(), ["Beta", "Client", "Compacted", "Old", "Waiting", "Zomb", "repo-abc-12-93"], "sessions");
+    T.eq(document.querySelectorAll("#rows .srow-s").length, 7, "rows");
     return nodes.size;
   });
 
-  await check("bubbles: stale fades, status chips, hand-off ring, icons", A, () => {
-    T.assert(T.node("Old").g.classList.contains("stale"), "Old should be stale");
-    T.eq(T.node("Waiting").chipText.textContent, "needs you", "Waiting chip");
-    T.eq(T.node("Beta").chipText.textContent, "working", "Beta chip");
-    T.assert(T.node("Beta").arc.classList.contains("hot"), "Beta ring should be red (over hand-off)");
-    T.assert(!T.node("Compacted").arc.classList.contains("hot"), "Compacted ring should not be red after compact");
-    T.eq(T.node("Beta").icon.textContent, "🧪", "per-session icon override");
-    T.eq(T.node("Zomb").icon.textContent, "🎮", "game area icon");
+  await check("list rows: status chips, hand-off over the limit, icons", A, () => {
+    const st = (name) => T.row(name).querySelector(".st");
+    T.eq([st("Old").className, st("Waiting").textContent, st("Beta").textContent], ["st stale", "needs you", "working"], "status chips");
+    T.assert(T.row("Beta").querySelector(".rt").classList.contains("hot"), "Beta over hand-off");
+    T.assert(!T.row("Compacted").querySelector(".rt").classList.contains("hot"), "Compacted not hot after compact");
+    T.assert(T.row("Beta").querySelector(".av").textContent.startsWith("🧪"), "per-session icon override");
+    T.assert(T.row("Zomb").querySelector(".av").textContent.startsWith("🎮"), "game area icon");
     return "ok";
   });
 
-  await check("unread dot appears for a new reply and clears when the popup is opened", A, () => {
-    const z = T.node("Zomb"), keep = seenAt[z.s.sessionId];
+  await check("unread dot appears for a new reply and clears when the session is opened", A, () => {
+    const z = T.node("Zomb"), keep = seenAt[z.s.sessionId], before = selected;
     seenAt[z.s.sessionId] = 1; updateSessions(state.sessions);
-    const shown = z.dot.style.display !== "none";
+    const shown = !!T.row("Zomb").querySelector(".u");
     select(z.s.sessionId); updateSessions(state.sessions);
-    const after = z.dot.style.display !== "none";
-    select(null); seenAt[z.s.sessionId] = keep; saveSeen();
+    const after = !!T.row("Zomb").querySelector(".u");
+    select(before); seenAt[z.s.sessionId] = keep; saveSeen();
     T.assert(shown && !after, `dot shown=${shown}, after opening=${after}`);
     return "ok";
   });
 
-  await check("routes: feed has SendMessage / sb spawn / sb send; a new route flies and opens that session's popup", A, async () => {
+  await check("routes: feed has SendMessage / sb spawn / sb send; a new route flashes that session's row, the open one stays", A, async () => {
     T.eq(state.dispatcher.routes.map((r) => r.kind + ":" + r.target), ["send:Beta", "spawn:New one", "send:Zomb"], "routes");
-    select(null);
+    select(T.node("Beta").s.sessionId);
     updateRoutes([...state.dispatcher.routes, { id: "t-route", at: Date.now(), kind: "send", target: "Compacted", text: "hello" }]);
-    await T.sleep(1400);
-    T.eq(nodes.get(selected)?.s.name, "Compacted", "active popup");
+    const flashed = T.row("Compacted").classList.contains("flash");
+    await T.sleep(100);
+    T.eq([nodes.get(selected)?.s.name, flashed], ["Beta", true], "open session, row flash");
     T.assert(document.activeElement === document.body || document.activeElement === input, "focus must not move");
-    select(null);
     return "ok";
   });
 
-  await check("sb pulse: known names pulse with the kind's colour and tag, unknown ignored, nothing sent", A, async () => {
+  await check("sb pulse: known names flash their row in the kind's colour, unknown ignored, nothing sent", A, async () => {
     const res = await (await fetch("/api/pulse", { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: JSON.stringify({ names: ["Waiting", "Nobody"], kind: "needs-you" }) })).json();
     T.eq(res, { pulsed: ["Waiting"], unknown: ["Nobody"] }, "server answer");
-    let seen = false, tag = "";
-    for (let i = 0; i < 40 && !seen; i++) { await T.sleep(100); seen = T.node("Waiting").g.classList.contains("flash-needs-you"); tag = document.querySelector(".flashtag.needs-you")?.textContent ?? tag; }
-    T.assert(seen, "Waiting should flash"); T.eq(tag, "needs you", "tag");
-    T.assert(!T.node("Beta").g.className.baseVal.includes("flash"), "others must not flash");
+    let seen = false;
+    for (let i = 0; i < 40 && !seen; i++) { await T.sleep(100); seen = T.row("Waiting").classList.contains("flash-needs-you"); }
+    T.assert(seen, "Waiting should flash");
+    T.assert(!T.row("Beta").className.includes("flash-needs-you"), "others must not flash");
     T.eq(T.sent.length, 0, "nothing sent");
     return "ok";
   });
@@ -214,10 +215,10 @@ const HELPERS = () => {
     return "ok";
   });
 
-  await check("quick replies: '?' on waiting bubbles; popup buttons send via the reply path on click; blocked folder gets none", A, async () => {
+  await check("quick replies: '?' on waiting rows; the pane's buttons send via the reply path on click; blocked folder gets none", A, async () => {
     T.sent.length = 0;
-    T.assert(T.node("Waiting").askG.style.display !== "none", "? on Waiting");
-    T.assert(T.node("Compacted").askG.style.display === "none", "no ? on Compacted");
+    T.assert(T.row("Waiting").querySelector(".q"), "? on Waiting");
+    T.assert(!T.row("Compacted").querySelector(".q"), "no ? on Compacted");
     select(T.node("Waiting").s.sessionId); await T.sleep(100);
     const labels = [...document.querySelectorAll("#p-quick button")].map((b) => b.textContent);
     T.eq(labels, ["Yes", "No", "Other…"], "buttons");
@@ -424,7 +425,7 @@ const HELPERS = () => {
       localStorage.removeItem("sb-chips"); chips = loadChips(); sessionPending.delete(id); saveOutbox();
     }
   });
-  await check("popup: tool calls fold into one line; Bash rows show the real command; question cards; Details closed and remembered; short name", A, async () => {
+  await check("session pane: tool calls fold into one line; Bash rows show the real command; question cards; Details is a closed dropdown; short name", A, async () => {
     localStorage.removeItem("sb-details"); detailsOpen = false;
     const n = T.node("repo-abc-12-93"); select(n.s.sessionId);
     for (let i = 0; i < 40 && !$("p-log").querySelector(".askcard"); i++) await T.sleep(100);
@@ -436,20 +437,22 @@ const HELPERS = () => {
       cards: [...$("p-log").querySelectorAll(".askcard")].map((c) => [c.classList.contains("done"), c.querySelector(".aqq").textContent.replace(/^\w+(?=[A-Z])/, ""), c.querySelector(".aqa")?.textContent ?? null]),
       noAskRow: ![...$("p-log").querySelectorAll(".msg.tool .tl")].some((x) => /AskUserQuestion/.test(x.textContent)),
       quick: [...$("p-quick").querySelectorAll("button")].map((b) => b.textContent), asks: $("p-quick").querySelector(".qlabel")?.textContent,
-      askMark: n.askG.style.display !== "none",
+      askMark: !!T.row("repo-abc-12-93").querySelector(".q"),
     };
     groups[0].querySelector("summary").click(); r.opens = groups[0].querySelector("details").open;
     const rowH = groups[0].querySelector(".msg.tool").getBoundingClientRect().height; r.compactRows = rowH > 10 && rowH <= 28;
-    $("p-details").open = true; $("p-details").dispatchEvent(new Event("toggle")); select(null); select(n.s.sessionId); r.remembered = $("p-details").open;
-    $("p-details").open = false; $("p-details").dispatchEvent(new Event("toggle")); select(null);
+    $("p-details").open = true; const info = $("p-info").getBoundingClientRect(), log = $("p-log").getBoundingClientRect();
+    r.dropdown = getComputedStyle($("p-info")).position === "absolute" && info.bottom > log.top;
+    $("log").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.closesOutside = !$("p-details").open;
+    $("p-details").open = true; select(null); select(n.s.sessionId); r.remembered = $("p-details").open;
     T.eq(r, {
       title: "ABC-12", titleTip: "repo-abc-12-93", details: false,
       groups: ["4 tool calls: Bash ×3, get_issue", "🔧 $ git checkout main"], collapsed: true,
       rows: ["$ git log --oneline -5", "Run the unit tests", "$ cat src/a.ts", "get_issue"],
       cards: [[true, "Which branch?", "Answer: main"], [false, "Ship it now?", null]], noAskRow: true,
       quick: ["1. Yes, ship", "2. Wait for review", "Other…"], asks: "It asks: Ship it now?", askMark: true,
-      opens: true, compactRows: true, remembered: true,
-    }, "popup");
+      opens: true, compactRows: true, dropdown: true, closesOutside: true, remembered: false,
+    }, "pane");
     return `row ${Math.round(rowH)}px`;
   });
   await check("question form: the open card is a form; Submit answers through the real picker (scripted); a second try is refused", A, async () => {
@@ -459,7 +462,7 @@ const HELPERS = () => {
     const note = () => form().querySelector(".anote");
     const r = { forms: $("p-log").querySelectorAll(".aform").length, doneHasForm: !!$("p-log").querySelector(".askcard.done .aform"),
       inputs: [...form().querySelectorAll('input:not([type="text"])')].map((x) => `${x.type}:${x.value}`),
-      labels: [...form().querySelectorAll(".aopt b")].map((b) => b.textContent), needsYou: n.s.state, mark: n.askG.style.display !== "none" };
+      labels: [...form().querySelectorAll(".aopt b")].map((b) => b.textContent), needsYou: n.s.state, mark: !!T.row("repo-abc-12-93").querySelector(".q") };
     form().querySelector(".asubmit").click(); await T.sleep(50);
     r.empty = note().textContent;
     form().querySelector('input[value="1"]').click(); form().querySelector(".asubmit").click();
@@ -540,22 +543,20 @@ const HELPERS = () => {
     T.eq(r, { shells: ["! ls src", "/rename Ticket work"], bangSettled: true, clear: "untracked", label: true, noRetry: true, busyStillQueued: "queued" }, "commands");
     return "ok";
   });
-  await check("running agents: 🤖 badge on the circle with a tooltip list, a line in the popup, a badge in the phone list", A, async () => {
+  await check("running agents: 🤖 badge on the row with a tooltip list, a line in the pane", A, async () => {
     const id = T.node("Compacted").s.sessionId;
     const withAgents = state.sessions.map((s) => s.sessionId === id ? { ...s, agents: [
       { id: "a1", description: "Search the logs", since: Date.now() - 120_000, background: true },
       { id: "a2", description: "Build the view", since: Date.now() - 60_000, background: false }] } : s);
     updateSessions(withAgents);
-    const n = T.node("Compacted"), g = n.agentG;
-    const r = { shown: g.style.display !== "none", label: g.querySelector("text").textContent, tip: g.querySelector("title").textContent,
-      othersHidden: [...nodes.values()].filter((x) => x !== n).every((x) => x.agentG.style.display === "none") };
+    const ag = T.row("Compacted").querySelector(".ag");
+    const r = { label: ag?.textContent, tip: ag?.title, othersHidden: [...document.querySelectorAll("#rows .srow-s")].filter((x) => x.dataset.id !== id).every((x) => !x.querySelector(".ag")) };
     select(id);
     r.line = $("p-agents").querySelector("summary").textContent; r.items = [...$("p-agents").querySelectorAll("li")].map((li) => li.firstChild.textContent.trim());
-    r.listBadge = !!document.querySelector(`#rows .srow-s[data-id="${id}"] .ag`);
-    select(null); updateSessions(state.sessions);
-    r.goneAfter = n.agentG.style.display === "none";
-    T.eq(r, { shown: true, label: "🤖 2", tip: "🤖 2 agents running:\n• Search the logs (2m, background)\n• Build the view (1m)", othersHidden: true,
-      line: "🤖 2 agents running", items: ["Search the logs", "Build the view"], listBadge: true, goneAfter: true }, "agents");
+    updateSessions(state.sessions);
+    r.goneAfter = !T.row("Compacted").querySelector(".ag");
+    T.eq(r, { label: "🤖2", tip: "🤖 2 agents running:\n• Search the logs (2m, background)\n• Build the view (1m)", othersHidden: true,
+      line: "🤖 2 agents running", items: ["Search the logs", "Build the view"], goneAfter: true }, "agents");
     return "ok";
   });
   await check("not delivered: the error names the session and why; no Retry when it has ended", A, async () => {
@@ -581,7 +582,7 @@ const HELPERS = () => {
     const mark = document.querySelector("#p-quick [data-mark]");
     T.assert(mark && mark.textContent === "Mark as waiting on me", "toggle offered when nothing was detected");
     mark.click(); await T.sleep(50);
-    T.assert(n.askG.style.display !== "none", "? on the bubble");
+    T.assert(T.row("Compacted").querySelector(".q"), "? on the row");
     T.eq([...document.querySelectorAll("#p-quick button")].map((b) => b.textContent), ["Yes", "No", "Other…", "✓ Waiting on me"], "buttons");
     T.assert(JSON.parse(localStorage.getItem("sb-markwait"))[n.s.sessionId] !== undefined, "remembered");
     const real = n.s.lastReplyAt;
@@ -591,7 +592,6 @@ const HELPERS = () => {
     document.querySelector("#p-quick [data-mark]").click(); document.querySelector("#p-quick [data-mark]").click(); await T.sleep(50);
     T.assert(!askOf(n.s), "click again clears it");
     T.eq(document.querySelector("#p-quick [data-mark]").textContent, "Mark as waiting on me", "back to offer");
-    n.askG.style.display = "none"; select(null);
     return "ok";
   });
 
@@ -621,24 +621,23 @@ const HELPERS = () => {
     return "ok";
   });
 
-  await check("session identity: lines about a session get its colour + chip; chip opens its popup; Switchboard keeps its own", A, async () => {
+  await check("session identity: lines about a session get its colour + chip; chip opens it in the pane; Switchboard keeps its own", A, async () => {
     const rows = [...$("log").querySelectorAll(".msg")];
     const toBeta = rows.find((r) => r.matches(".switchboard.tinted") && r.textContent.includes("tests pass, nothing else"));
     T.assert(toBeta, "→ Beta reply is tinted");
     const chip = toBeta.querySelector(".mhead .chip");
     T.eq(chip?.textContent, "🧪 Beta", "chip shows Beta's own icon + name");
-    T.eq(toBeta.style.getPropertyValue("--tint"), T.node("Beta").s.color, "tint = bubble colour");
+    T.eq(toBeta.style.getPropertyValue("--tint"), T.node("Beta").s.color, "tint = the session's colour");
     const notice = rows.find((r) => r.matches(".notice.tinted") && r.textContent.includes("Tests pass on beta"));
     T.assert(notice && notice.querySelector("strong")?.textContent === "beta", "notice from Beta, tinted, markdown");
     T.assert(toBeta.classList.contains("cont"), "same-session lines grouped under one chip");
     const plain = rows.find((r) => r.matches(".switchboard:not(.tinted)") && r.textContent.includes("answer 3"));
     T.eq(plain?.querySelector(".chip")?.textContent ?? (plain?.classList.contains("cont") ? "⚡ Switchboard" : ""), "⚡ Switchboard", "plain replies keep Switchboard");
     T.assert(!rows.some((r) => r.matches(".you") && r.querySelector(".chip")), "your own messages have no chip");
-    select(null); setSticky(false);
+    select(T.node("Waiting").s.sessionId);
     chip.click(); await T.sleep(300);
-    T.eq(selected, T.node("Beta").s.sessionId, "chip opened Beta's popup");
-    T.assert(!$("p-log").querySelector(".chip"), "no chips inside a session's own popup");
-    select(null); setSticky(false);
+    T.eq(selected, T.node("Beta").s.sessionId, "chip opened Beta in the pane");
+    T.assert(!$("p-log").querySelector(".chip"), "no chips inside a session's own pane");
     return "ok";
   });
 
@@ -724,8 +723,9 @@ const HELPERS = () => {
   await check("scroll: reading position never moves; at the bottom it follows; pill when new below", A, async () => {
     const log = $("log");
     const anchor = () => { const r = log.getBoundingClientRect(); const el = [...log.children].find((c) => c.getBoundingClientRect().bottom > r.top + 5); return { el, y: el.getBoundingClientRect().top }; };
-    log.scrollTop = 300; log.dispatchEvent(new Event("scroll")); await T.sleep(100);
-    const a = anchor();
+    // Somewhere in the middle (the "Waiting on you" cards above the log leave it less room than the old map layout did).
+    log.scrollTop = Math.min(300, (log.scrollHeight - log.clientHeight) / 2); log.dispatchEvent(new Event("scroll")); await T.sleep(100);
+    const a = anchor(), room = log.scrollHeight - log.clientHeight;
     hfStatus("hearing", "Hearing you…"); $("micnote").textContent = "Transcribing…"; await T.sleep(50);
     input.value = "word ".repeat(400); autosize(); await T.sleep(100);
     hfStatus("sent", "Sent: a long one. Listening again."); $("micnote").textContent = ""; await T.sleep(50);
@@ -738,37 +738,19 @@ const HELPERS = () => {
     await T.sleep(50);
     const gap = Math.round(log.scrollHeight - log.scrollTop - log.clientHeight);
     input.value = ""; autosize(); $("hfbar").className = "";
-    T.eq(moved, 0, "px moved while transcribing"); T.eq(movedAfterNew, 0, "px moved by new message"); T.assert(pill, "pill shown"); T.assert(gap <= 2, "follows at bottom, gap " + gap);
+    T.eq(moved, 0, `px moved while transcribing (room ${room}, top ${log.scrollTop})`); T.eq(movedAfterNew, 0, "px moved by new message"); T.assert(pill, "pill shown"); T.assert(gap <= 2, "follows at bottom, gap " + gap);
     return "ok";
   });
 
-  await check("popups: hover opens, into popup stays, leave closes, click sticks, outside click / Esc close", A, async () => {
-    const name = () => (selected ? nodes.get(selected)?.s.name : null), wait = () => T.sleep(HOVER.closeMs + 150);
-    const p = T.node("Compacted"), q = T.node("Waiting"); select(null);
-    const r = {};
-    hoverNode(p, true); await T.sleep(HOVER.openMs + 80); r.hover = name();
-    hoverNode(p, false); await wait(); r.leave = name();
-    hoverNode(p, true); await T.sleep(HOVER.openMs + 80); hoverNode(p, false); panel.dispatchEvent(new PointerEvent("pointerenter")); await wait(); r.intoPopup = name();
-    panel.dispatchEvent(new PointerEvent("pointerleave")); await wait(); r.leavePopup = name();
-    clickNode(p); hoverNode(p, false); await wait(); r.clicked = name();
-    hoverNode(q, true); await T.sleep(HOVER.openMs + 80); hoverNode(q, false); r.hoverOtherWhileStuck = name();
-    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.outside = name();
-    hoverNode(p, true); await T.sleep(HOVER.openMs + 80); panel.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); hoverNode(p, false); await wait(); r.clickInside = name();
-    dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); r.esc = name();
-    T.eq(r, { hover: "Compacted", leave: null, intoPopup: "Compacted", leavePopup: null, clicked: "Compacted", hoverOtherWhileStuck: "Compacted", outside: null, clickInside: "Compacted", esc: null }, "popup states");
-    return "ok";
-  });
-
-  await check("settings pane: hover opens, leave closes, click inside sticks, outside click closes", A, async () => {
+  await check("settings: the button opens it (no hover), outside click closes, it sits under the session list", A, async () => {
     const st = $("settings"), open = () => st.classList.contains("open");
     setSettingsSticky(false); settingsHover = false; showSettings();
-    const r = { start: open() };
-    st.dispatchEvent(new PointerEvent("pointerenter")); await T.sleep(HOVER.settingsOpenMs + 80); r.hover = open();
-    st.dispatchEvent(new PointerEvent("pointerleave")); await T.sleep(HOVER.settingsCloseMs + 150); r.leave = open();
-    st.dispatchEvent(new PointerEvent("pointerenter")); await T.sleep(HOVER.settingsOpenMs + 80);
-    $("settingsbody").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); st.dispatchEvent(new PointerEvent("pointerleave")); await T.sleep(HOVER.settingsCloseMs + 150); r.stuck = open();
+    const r = { start: open(), inList: $("list").contains(st) };
+    st.dispatchEvent(new PointerEvent("pointerenter")); await T.sleep(300); r.hover = open();
+    $("settingsbtn").click(); r.click = open();
+    $("settingsbody").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.inside = open();
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.outside = open();
-    T.eq(r, { start: false, hover: true, leave: false, stuck: true, outside: false }, "settings states");
+    T.eq(r, { start: false, inList: true, hover: false, click: true, inside: true, outside: false }, "settings states");
     return "ok";
   });
 
@@ -839,7 +821,7 @@ const HELPERS = () => {
       return "ok";
     } finally { window.fetch = real; setView("chat"); select(null); }
   });
-  await check("trust prompt: a waiting spawn shows a grey row on the map and in the list; Trust it posts its tmux name", A, async () => {
+  await check("trust prompt: a waiting spawn shows a grey row in the list; Trust it posts its tmux name", A, async () => {
     const real = window.fetch, posts = [];
     const wait = { name: "Mirza's new", tmux: "sb-claude-alpha-9", cwd: "/x/alpha", profile: "claude", at: Date.now() };
     window.fetch = async (u, o) => {
@@ -850,19 +832,19 @@ const HELPERS = () => {
       return new Response(JSON.stringify(d), { headers: { "content-type": "application/json" } });
     };
     try {
-      for (let i = 0; i < 40 && !$("trustwaits-map").querySelector(".trustwait"); i++) await T.sleep(100);
-      const row = $("trustwaits-map").querySelector(".trustwait");
-      T.assert(row && /Mirza's new/.test(row.textContent) && $("trustwaits-list").querySelector(".trustwait"), "row on the map and in the list");
+      for (let i = 0; i < 40 && !$("trustwaits-list").querySelector(".trustwait"); i++) await T.sleep(100);
+      const row = $("trustwaits-list").querySelector(".trustwait");
+      T.assert(row && /Mirza's new/.test(row.textContent), "row in the list");
       row.querySelector("[data-trust]").click();
       for (let i = 0; i < 30 && !posts.length; i++) await T.sleep(100);
       T.eq(posts, [{ tmux: "sb-claude-alpha-9" }], "posted");
     } finally { window.fetch = real; }
-    for (let i = 0; i < 40 && $("trustwaits-map").children.length; i++) await T.sleep(100);
-    T.eq($("trustwaits-map").children.length, 0, "gone once state has none");
+    for (let i = 0; i < 40 && $("trustwaits-list").children.length; i++) await T.sleep(100);
+    T.eq($("trustwaits-list").children.length, 0, "gone once state has none");
     return "ok";
   });
-  await check("desktop: ＋ New session on the map opens a centred box; Esc closes it", A, async () => {
-    $("newbtn").click();
+  await check("desktop: ＋ New in the session list opens a centred box; Esc closes it", A, async () => {
+    $("newbtn-list").click();
     for (let i = 0; i < 40 && !$("ns-folders").querySelector(".nsf"); i++) await T.sleep(100);
     const b = document.querySelector("#newsheet .nsbox").getBoundingClientRect();
     const r = { open: !$("newsheet").hidden, centred: b.width < innerWidth / 2 && Math.abs(b.left + b.width / 2 - innerWidth / 2) < 2, folders: $("ns-folders").querySelectorAll(".nsf").length > 3 };
@@ -874,7 +856,7 @@ const HELPERS = () => {
 
   // ---- two tabs ----
   const B = document.createElement("iframe");
-  B.src = "/?layout=map";
+  B.src = "/";
   await run(A, () => { localStorage.setItem("sb-handsfree", "1"); hf = { node: { disconnect() {} }, stream: { getTracks: () => [] }, ctx: { close() {} }, queue: Promise.resolve() }; claimMic(); return true; });
   document.body.appendChild(B);
   await new Promise((r) => (B.onload = r));
@@ -884,7 +866,7 @@ const HELPERS = () => {
   await check("two tabs: a hidden message is hidden in the other tab too", B, () => {
     const id = parent.document.getElementById("a").contentWindow.__hiddenId; T.assert(id && !mainLog.els.get(id), "hidden in B"); return "ok";
   });
-  await check("two tabs: same sessions and chat", B, () => { T.eq(nodes.size, 7, "bubbles in tab B"); T.assert(state.dispatcher.chat.length > 10, "chat in tab B"); return "ok"; });
+  await check("two tabs: same sessions and chat", B, () => { T.eq(nodes.size, 7, "sessions in tab B"); T.assert(state.dispatcher.chat.length > 10, "chat in tab B"); return "ok"; });
   await check("two tabs: second tab doesn't record while the first owns the mic", B, () => {
     T.eq(!!hf, false, "B recording"); T.assert(/another tab/.test($("hftext").textContent), $("hftext").textContent); T.eq($("hfoff").textContent, "Use mic here", "button"); return "ok";
   });
@@ -899,7 +881,7 @@ const HELPERS = () => {
   await run(A, () => fetch("/api/pulse", { method: "POST", headers: { "content-type": "application/json", "x-switchboard": "1" }, body: JSON.stringify({ names: ["Compacted"], kind: "continue" }) }).then(() => true));
   await check("two tabs: a pulse shows in the other tab too", B, async () => {
     let seen = false;
-    for (let i = 0; i < 40 && !seen; i++) { await T.sleep(100); seen = T.node("Compacted").g.classList.contains("flash-continue"); }
+    for (let i = 0; i < 40 && !seen; i++) { await T.sleep(100); seen = T.row("Compacted").classList.contains("flash-continue"); }
     T.assert(seen, "Compacted should flash green in tab B"); return "ok";
   });
   await check("two tabs: settings and chat width follow the other tab", B, () => {
@@ -914,14 +896,14 @@ const HELPERS = () => {
   await new Promise((r) => (D.onload = r));
   await sleep(2500);
   await run(D, HELPERS);
-  await check("desk: chat, session list and one open session side by side; no bubbles; the pane fills the height", D, () => {
-    const shown = ["chat", "list", "panel", "mapwrap"].filter((id) => getComputedStyle($(id)).display !== "none");
+  await check("desk: chat, session list and one open session side by side; no map; the pane fills the height", D, () => {
+    const shown = ["chat", "list", "panel"].filter((id) => getComputedStyle($(id)).display !== "none");
     const p = panel.getBoundingClientRect(), c = $("chat").getBoundingClientRect(), l = $("list").getBoundingClientRect();
     const on = document.querySelector("#rows .srow-s.on");
-    T.eq({ deck: document.body.classList.contains("deck"), shown, order: c.right <= l.left + 1 && l.right <= p.left + 1, full: Math.round(p.top) === 0 && Math.round(p.bottom) === innerHeight,
+    T.eq({ deck: document.body.classList.contains("deck"), noMap: !document.querySelector("svg#map, #mapwrap"), shown, order: c.right <= l.left + 1 && l.right <= p.left + 1, full: Math.round(p.top) === 0 && Math.round(p.bottom) === innerHeight,
       wide: p.width > innerWidth * 0.45, open: panel.classList.contains("open"), rowOn: on?.dataset.id === selected, first: document.querySelector("#rows .srow-s")?.dataset.id === selected,
       composer: !$("p-form").classList.contains("collapsed"), settings: $("list").contains($("settings")) },
-      { deck: true, shown: ["chat", "list", "panel"], order: true, full: true, wide: true, open: true, rowOn: true, first: true, composer: true, settings: true }, "desk");
+      { deck: true, noMap: true, shown: ["chat", "list", "panel"], order: true, full: true, wide: true, open: true, rowOn: true, first: true, composer: true, settings: true }, "desk");
     return "ok";
   });
   await check("desk: a row click switches the pane; Esc, outside clicks and new routes never close or switch it", D, async () => {
@@ -930,7 +912,7 @@ const HELPERS = () => {
     const after = selected;
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     $("log").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    followRoute(T.node("Waiting")); await T.sleep(50);
+    updateRoutes([{ id: "t-desk-route", at: Date.now(), kind: "send", target: "Waiting", text: "hi" }]); await T.sleep(50);
     T.eq([after, selected, document.querySelector(`#rows .srow-s[data-id="${T.node("Waiting").s.sessionId}"]`).classList.contains("flash")], [beta, beta, true], "stays on Beta; Waiting's row flashes");
     return "ok";
   });
@@ -974,9 +956,9 @@ const HELPERS = () => {
   await check("phone: one screen at a time with tabs; settings move to their own tab; desktop has no tabs", P, () => {
     T.assert(document.body.classList.contains("phone"), "phone class");
     T.eq(getComputedStyle($("tabs")).display, "flex", "tabs shown");
-    const shown = () => ["chat", "list", "mapwrap", "more"].filter((id) => getComputedStyle($(id)).display !== "none");
-    setTab("chat"); const a = shown(); setTab("map"); const b = shown(); setTab("more"); const c = shown();
-    T.eq([a, b, c], [["chat"], ["mapwrap"], ["more"]], "visible panes");
+    const shown = () => ["chat", "list", "more"].filter((id) => getComputedStyle($(id)).display !== "none");
+    setTab("chat"); const a = shown(); setTab("list"); const b = shown(); setTab("more"); const c = shown();
+    T.eq([a, b, c, [...$("tabs").querySelectorAll("button")].map((x) => x.dataset.tab)], [["chat"], ["list"], ["more"], ["chat", "list", "more"]], "visible panes, no Map tab");
     T.assert($("more").contains($("settings")) && getComputedStyle($("settingsbody")).display !== "none", "settings in their tab, open");
     T.eq(getComputedStyle($("input")).fontSize, "16px", "input 16px (no iOS zoom)");
     const desk = parent.document.getElementById("a").contentWindow;
@@ -986,7 +968,7 @@ const HELPERS = () => {
   await check("phone: Sessions tab lists every session, waiting-on-you first, badge counts them", P, () => {
     setTab("list");
     const rows = [...document.querySelectorAll("#rows .srow-s")];
-    T.eq(rows.length, nodes.size, "one row per bubble");
+    T.eq(rows.length, nodes.size, "one row per session");
     const waiting = [...nodes.values()].filter((n) => askOf(n.s) || n.s.state === "needs-you").length;
     T.assert(waiting > 0, "fixture has a waiting session");
     const firstIds = rows.slice(0, waiting).map((r) => r.dataset.id);
@@ -1003,7 +985,7 @@ const HELPERS = () => {
     T.eq([selected, Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], [id, 0, 0, innerWidth, innerHeight], "full screen sheet");
     T.assert(!$("p-form").classList.contains("collapsed"), "reply box open");
     T.eq(history.state?.sb, "session", "history entry for the back gesture");
-    T.assert(getComputedStyle(panel.querySelector(".close")).display !== "none" && getComputedStyle($("p-pin")).display === "none", "Back shown, Pin hidden");
+    T.assert(getComputedStyle(panel.querySelector(".close")).display !== "none", "Back shown");
     closePopup(); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
     T.eq(selected, null, "closed by Back");
     return "ok";
@@ -1113,14 +1095,12 @@ const HELPERS = () => {
     setTab("chat");
     return "ok";
   });
-  await check("phone: a touch never opens a hover popup, and routes don't take over the screen", P, async () => {
-    select(null); setTab("map");
-    const n = T.node("Compacted");
-    n.g.dispatchEvent(new PointerEvent("pointerenter", { pointerType: "touch" })); await T.sleep(HOVER.openMs + 120);
-    const afterTouch = selected;
-    followRoute(n);
-    T.eq([afterTouch, selected], [null, null], "nothing opened");
-    setTab("chat");
+  await check("phone: routes and pulses never take over the screen", P, async () => {
+    select(null); setTab("chat");
+    updateRoutes([{ id: "t-phone-route", at: Date.now(), kind: "send", target: "Compacted", text: "hi" }]);
+    updatePulses([{ id: "t-phone-pulse", at: Date.now(), names: ["Compacted"], kind: "info" }]);
+    await T.sleep(100);
+    T.eq([selected, document.body.dataset.tab], [null, "chat"], "nothing opened");
     return "ok";
   });
   await check("phone: the sheet's Terminal view fits the screen and scrolls sideways; chips and quick keys reachable", P, async () => {

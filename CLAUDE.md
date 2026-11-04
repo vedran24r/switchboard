@@ -1,5 +1,5 @@
 # switchboard
-Voice-first dispatcher plus a bubble-map dashboard for every Claude Code session on this Mac. Kind: personal tool. Launch: `cd ~/Projects/switchboard && claude`.
+Voice-first dispatcher plus a one-page dashboard (chat | session list | the open session) for every Claude Code session on this Mac. Kind: personal tool. Launch: `cd ~/Projects/switchboard && claude`.
 Personal preferences load from `~/.claude/vedran.md`.
 
 This file is for *developing* Switchboard. The dispatcher's own rules are in `dispatcher/CLAUDE.md`
@@ -14,8 +14,8 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
 - `src/dispatcher.ts`: the dispatcher is an interactive session named "Switchboard" in `~/.switchboard/dispatcher`,
   in tmux (Pocket's when it runs, else `tmux -L switchboard`). The map types into it (Pocket `/api/sessions/<tmux>/send`,
   typed not pasted so it counts as Vedran's input) and reads its transcript for the chat panel and the routes:
-  `SendMessage` and `sb spawn` tool calls become the "flying request" animations.
-- `src/server.ts` + `web/index.html`: the map (no build step, no deps). `sb map` → http://127.0.0.1:8790, kept
+  `SendMessage` and `sb spawn` tool calls flash that session's row (`updateRoutes`).
+- `src/server.ts` + `web/index.html`: the page (no build step, no deps; still called "the map": `sb map`, launchd label). `sb map` → http://127.0.0.1:8790, kept
   alive by launchd (`scripts/install-launchd.sh`, label `ai.switchboard.map`, log `~/.switchboard/map.log`).
   POSTs need same-origin + `x-switchboard: 1` + JSON, so other websites can't type into the dispatcher.
 - No build: Node 26 runs the `.ts` files directly. No dependencies.
@@ -27,7 +27,7 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
 - Pocket's tmux socket is `-L pocket`. Pocket needs `name`/`prompt` support in `startSession`
   (added 2026-10-21 in pocket-sessions `server/server.ts`).
 - A never-opened folder shows Claude's trust prompt first. The spawned session isn't in the registry
-  (or on the map) until someone accepts it in the terminal or on the phone.
+  (or in the list) until someone accepts it in the terminal or on the phone.
   `waitingForTrust` (actions.ts) finds those: spawns from the last 6 h whose sb-*/pk-* tmux is alive, unregistered, and shows the
   prompt (blocked folders skipped before the pane is read). `/api/state` `trustWaits` → grey rows; "Trust it" = Down, Enter, only for a listed one.
 - `ListAgents` may not list `game`-profile sessions, so the dispatcher can't message those.
@@ -52,10 +52,13 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
 - Phone access (`src/access.ts`): the server stays on 127.0.0.1; `tailscale serve` (HTTPS 8443) proxies from loopback with
   `Host: <mac>.<tailnet>.ts.net:8443` and `Tailscale-User-Login`. Trust that header only on a loopback socket + ts.net host +
   `remoteLogins`. POST origin is then `https://<host>`. Pocket already owns serve's `/` on 443, so don't touch that.
-- Phone layout = `body.phone` (≤700px, `setPhone`), not a second page: same JS. The session sheet (`#panel`) and `#settings`
-  are moved out of `#mapwrap` on a phone, because the map pane is display:none on other tabs (fixed children vanish too).
+- Two layouts, one page: `body.deck` (wider than 700px: three grid columns, `#panel` static in column 3, `#settings` under
+  `#list`) and `body.phone` (≤700px, tabs; `#settings` moves into the Settings tab), both set by `setPhone`. The bubble map,
+  hover popups and the layout switch were removed 2026-11-04 (Vedran: bubbles that move and hover are finicky); `nodes` is
+  now just sessionId → `{ s }`. On the desk nothing opens, closes or switches the pane by itself: routes and `sb pulse`
+  flash the row (`flashRow`), and with nothing selected `renderList` opens the first row.
   Grid columns need `minmax(0, 1fr)` or long lines widen the page. Headless Chrome windows can't go under ~500px:
-  screenshot phone size through a 390px iframe. `tick()` skips the physics while the map isn't visible.
+  screenshot phone size through a 390px iframe.
 
 - Access modes: local, SSH tunnel (any loopback port: `LOCAL_HOST` in access.ts) and Tailscale. Never bind a LAN address.
   This Mac has Remote Login off. Test tunnels with a reverse one: `ssh -f -N -R 9000:127.0.0.1:8790 winpc`, then curl on winpc.
