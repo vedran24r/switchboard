@@ -148,3 +148,5 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   hooks), status paths are relative to the repo root, so diff from `rev-parse --show-toplevel`. `file` must equal a path
   status returned, else 404. Untracked = `diff --no-index /dev/null` (exits 1 on a difference). Blocked → 403 before git.
   The page loads it on open and ↻ only (no polling). Tests build the repo with `makeRepo` (fixtures.ts, hooks/signing off).
+- After a /compact (or auto-compact) Claude Code writes its summary as a `user` line with `isCompactSummary: true`. `readChat` and
+  `parseTranscript` skip it, or it shows up as Vedran's last message and hides the reply before it (2026-11-04).
