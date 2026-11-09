@@ -7,7 +7,7 @@ import { listSessions } from "./sessions.ts";
 /**
  * Speech to text on this Mac: whisper.cpp's server keeps the model loaded (Metal), so a clip takes
  * about a second. Any browser works, Firefox included: the page records WAV and posts it here.
- * Setup: brew install whisper-cpp, plus the model in ~/.switchboard/models (see README).
+ * Setup: brew install whisper-cpp, plus the model in ~/.switchboard/models (see docs/guide.md → Voice).
  */
 
 const PORT = 8791;
@@ -20,7 +20,7 @@ const up = () => fetch(`http://127.0.0.1:${PORT}/`, { signal: AbortSignal.timeou
 
 async function ensureServer() {
   if (await up()) return;
-  if (!existsSync(MODEL)) throw new Error(`Whisper model missing: ${MODEL}. See README → Voice.`);
+  if (!existsSync(MODEL)) throw new Error(`Whisper model missing: ${MODEL}. See docs/guide.md → Voice.`);
   starting ??= (async () => {
     const child = spawn(BIN, ["-m", MODEL, "--host", "127.0.0.1", "--port", String(PORT), "-l", "auto"], { stdio: "ignore" });
     child.on("exit", () => (starting = undefined));
