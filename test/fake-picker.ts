@@ -17,6 +17,8 @@ export interface FakeState {
   drop?: number;
   /** Start somewhere else (a different question showing), as if someone already moved in the terminal. */
   startTab?: number;
+  /** Pane height: only the last `height` lines show, as when a tall picker's top scrolls off a short pane (2026-11-12). */
+  height?: number;
 }
 
 export function newPicker(questions: FakeQuestion[], extra: Partial<FakeState> = {}): FakeState {
@@ -81,6 +83,11 @@ export function press(st: FakeState, args: string[]) {
 }
 
 export function render(st: FakeState): string {
+  const all = draw(st);
+  return st.height ? all.split("\n").slice(-st.height - 1).join("\n") : all;
+}
+
+function draw(st: FakeState): string {
   const out = ["⏺ Let me ask a couple of things first.", ""];
   if (st.closed === "submitted") {
     out.push("⏺ User answered Claude's questions:", ...st.questions.map((q, i) => `  ⎿  · ${q.question} → ${answerText(q, st.answers[i])}`), "", RULE, "❯ ", RULE);

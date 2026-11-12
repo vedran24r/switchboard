@@ -32,6 +32,12 @@ export function same(screen: string | undefined, want: string): boolean {
   return !!a && (a === b || (b.startsWith(a) && a.length >= Math.min(b.length, 10)));
 }
 
+/** The visible end of a question whose top scrolled off the pane: the question ends with it (spaces don't count). */
+export function sameEnd(screen: string, want: string): boolean {
+  const a = norm(screen).replace(/ /g, ""), b = norm(want).replace(/ /g, "");
+  return !!a && b.endsWith(a) && a.length >= Math.min(b.length, 10);
+}
+
 /** The answers as the form sent them, checked against the questions (400 for anything off). Text: no control characters. */
 export function checkAnswers(questions: Question[], answers: unknown): PickerAnswer[] {
   const bad = (why: string) => refuse(why, 400);
@@ -58,10 +64,18 @@ export const answerText = (q: Question, a: PickerAnswer) => [...inOrder(a.picks)
 interface Want { qi: number; typed?: string; checked: boolean[]; cursor: number }
 function looksRight(p: PickerScreen | undefined, qs: Question[], w: Want): boolean {
   const q = qs[w.qi], n = q.options.length;
-  if (!p || p.review || !same(p.title, q.question) || p.tabs.length !== qs.length) return false;
-  // Tabs before this one are answered, the ones after aren't (this one's mark changes as boxes are ticked).
-  if (p.tabs.some((t, i) => (i < w.qi && !t.done) || (i > w.qi && t.done))) return false;
-  if (q.header && !same(p.tabs[w.qi].label, q.header)) return false;
+  if (!p || p.review) return false;
+  if (p.cut) {
+    // Top off screen: no tab bar to check. What shows of the question must be its end; with none of it showing, the
+    // labels must tell this question apart from every other one in the picker.
+    const labels = (x: Question) => JSON.stringify(x.options.map((o) => norm(o.label)));
+    if (p.title ? !sameEnd(p.title, q.question) : qs.some((x, i) => i !== w.qi && labels(x) === labels(q))) return false;
+  } else {
+    if (!same(p.title, q.question) || p.tabs.length !== qs.length) return false;
+    // Tabs before this one are answered, the ones after aren't (this one's mark changes as boxes are ticked).
+    if (p.tabs.some((t, i) => (i < w.qi && !t.done) || (i > w.qi && t.done))) return false;
+    if (q.header && !same(p.tabs[w.qi].label, q.header)) return false;
+  }
   for (let j = 0; j <= n; j++) {
     const row = p.rows.find((r) => r.n === j + 1);
     if (!row) return false;
@@ -116,8 +130,11 @@ export async function drivePicker(io: PickerIO, qs: Question[], answers: PickerA
   }
   // One single-select question is sent by its Enter; otherwise check the review step, then Submit.
   if (qs.length > 1 || qs[0].multiSelect) {
-    await until("the review step with your answers", (p) => !!p?.review && !p.incomplete && p.answers.length === qs.length &&
-      p.answers.every((x, i) => same(x, texts[i])) && p.rows.filter((r) => r.cursor).length === 1 && !!p.rows.find((r) => r.cursor && r.n === 1 && r.label === "Submit answers"));
+    // A review step taller than the pane shows only its last answers (the top, with any "not answered" warning, is off
+    // screen); they must be the end of ours. Every answer was already checked on its own question.
+    await until("the review step with your answers", (p) => !!p?.review && !p.incomplete &&
+      (p.cut ? p.answers.length > 0 && p.answers.length <= qs.length : p.answers.length === qs.length) &&
+      p.answers.every((x, i) => same(x, texts[qs.length - p.answers.length + i])) && p.rows.filter((r) => r.cursor).length === 1 && !!p.rows.find((r) => r.cursor && r.n === 1 && r.label === "Submit answers"));
     io.press(["Enter"]);
   }
   try { await until("the picker to close", (p) => !p); }

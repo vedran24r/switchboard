@@ -814,6 +814,32 @@ ${RULE}
 
 Enter to select · Tab/Arrow keys to navigate · Esc to cancel`;
 
+// Real capture (2.1.316, 46×28 pane, 2026-11-12): the picker is taller than the pane, so the tab bar and the start of
+// the question are off screen, with nothing in scrollback.
+const PICKER_CUT = `│ (the hook-guard) running before every
+│ Read/Grep/Glob. How should the starter kit
+│ part handle that?
+
+❯ 1. No hooks (Recommended)
+     Ship the setup script and the CLAUDE.md
+     note only. It runs only when Claude or you
+     call it, so the rule holds.
+  2. Hooks, opt-in extra
+     Default install has no hooks; a separate
+     hooks template you add by hand
+     (documented in the README).
+  3. Hooks on, note exception
+     Keep hooks in the default install and add
+     a line to the guide naming it as the one
+     third-party exception.
+  4. Type something.
+──────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to
+cancel
+`;
+
 test("picker screens: tabs, question, rows, boxes, highlighted row, the review step (real captures)", async () => {
   const { parsePicker } = await import("../src/asks.ts");
   const first = parsePicker(PICKER_FIRST)!;
@@ -834,6 +860,14 @@ test("picker screens: tabs, question, rows, boxes, highlighted row, the review s
   assert.equal(parsePicker(" Do you want to proceed?\n ❯ 1. Yes\n   2. No\n"), undefined, "a permission dialog isn't a picker");
   assert.equal(parsePicker("- ☐ write the tests\n- ☒ ship it\n"), undefined, "a checklist in a reply isn't one either");
   assert.deepEqual([askFromScreen(PICKER_FIRST)?.picker, askFromScreen(PICKER_FIRST)?.options], [true, []], "on screen: waiting on you");
+  const cut = parsePicker(PICKER_CUT)!;
+  assert.deepEqual([cut.cut, cut.tabs, cut.review, cut.title], [true, [], false, "(the hook-guard) running before every Read/Grep/Glob. How should the starter kit part handle that?"], "top off screen: the visible end of the question");
+  assert.deepEqual(cut.rows.map((r) => [r.n, r.label, r.cursor]), [[1, "No hooks (Recommended)", true], [2, "Hooks, opt-in extra", false], [3, "Hooks on, note exception", false], [4, "Type something.", false], [5, "Chat about this", false]]);
+  assert.equal(parsePicker(PICKER_CUT.split("\n").slice(4).join("\n"))?.title, "", "none of the question showing");
+  assert.equal(parsePicker(PICKER_CUT.replace(/Enter to select.*\n/, "")), undefined, "no picker footer: not a picker");
+  const cutReview = parsePicker(PICKER_REVIEW.split("\n").slice(7).join("\n"))!;
+  assert.deepEqual([cutReview.cut, cutReview.review, cutReview.answers, cutReview.rows.find((r) => r.cursor)?.label], [true, true, ["Cheese, Basil, Mushrooms", "Medium please"], "Submit answers"], "review step with its top off screen");
+  assert.equal(parsePicker(" Do you want to proceed?\n ❯ 1. Yes\n   2. No\n   3. Type something.\n\n Esc to cancel\n"), undefined, "a permission dialog still isn't one");
 });
 
 test("picker answers: checked against the questions before any key (one per question, real options, text cleaned)", async () => {
@@ -889,6 +923,24 @@ test("picker driving: every flow presses the right keys and checks the screen af
     const r = await drivePicker({ screen: () => render(st), press: (a) => press(st, a) }, [colour], [{ picks: [1] }], { timeoutMs: 100, pollMs: 10 }).catch((e) => e);
     assert.deepEqual([r.message, st.keys], ["Couldn't answer automatically, use the Terminal tab", []], shown[0].question);
   }
+  // A picker taller than its pane (2026-11-12: long question and descriptions in a phone-sized pane): the tab bar and
+  // the start of the question are off screen. Answered from what shows (the question's end, every label), not refused.
+  const tall = { ...long(1, "How should the starter kit part handle that?"), options: [{ label: "No hooks", description: "Ship the setup script only" }, { label: "Hooks, opt-in extra" }, { label: "Hooks on, note exception" }] };
+  const st22 = newPicker([tall], { height: 12 });
+  assert.ok(!render(st22).includes("☐") && render(st22).includes("│ "), "the fake cuts the top, part of the question still shows");
+  const tallRun = await run([tall], [{ picks: [1] }], { height: 12 });
+  assert.deepEqual([tallRun.error, tallRun.keys, tallRun.closed, tallRun.texts], [undefined, ["Down", "Enter"], "submitted", ["Hooks, opt-in extra"]]);
+  const tallOwn = await run([tall], [{ picks: [], other: "Ask the team" }], { height: 9 });
+  assert.deepEqual([tallOwn.error, tallOwn.keys, tallOwn.closed], [undefined, ["Down", "Down", "Down", "-l -- Ask the team", "Enter"], "submitted"], "none of the question showing, labels unique: still answered");
+  const tallMany = await run([tall, { ...tall, question: "Something else entirely?" }], [{ picks: [0] }, { picks: [0] }], { height: 12 });
+  assert.deepEqual([tallMany.error, tallMany.keys], [undefined, ["Enter", "Enter", "Enter"]], "several questions, each told apart by the end of its text");
+  const twins = await run([tall, { ...tall, header: "Q2" }], [{ picks: [0] }, { picks: [0] }], { height: 9 });
+  assert.deepEqual([twins.error, twins.keys], ["Couldn't answer automatically, use the Terminal tab", []], "no question text showing and two questions with the same labels: can't tell which, nothing pressed");
+  const wrongEnd = newPicker([{ ...tall, question: tall.question.replace("starter kit", "other") }], { height: 12 });
+  const we = await drivePicker({ screen: () => render(wrongEnd), press: (a) => press(wrongEnd, a) }, [tall], [{ picks: [1] }], { timeoutMs: 100, pollMs: 10 }).catch((e) => e);
+  assert.deepEqual([we.message, wrongEnd.keys], ["Couldn't answer automatically, use the Terminal tab", []], "visible end of a different question: nothing pressed");
+  const rowsCut = await run([tall], [{ picks: [1] }], { height: 6 });
+  assert.deepEqual([rowsCut.error, rowsCut.keys], ["Couldn't answer automatically, use the Terminal tab", []], "option rows off screen too: refused before any key");
   const missed = await run([colour, size], [{ picks: [2] }, { picks: [0] }], { drop: 1 });
   assert.deepEqual([missed.error, missed.keys, missed.closed], ["Couldn't answer automatically, use the Terminal tab", ["Down", "Down"], ""], "a key that didn't land: stops right after it");
   assert.match(missed.detail, /row 3 highlighted/);

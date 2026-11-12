@@ -99,6 +99,10 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
 - A long question is drawn wrapped inside a `│ ` quote box (`│ D1: Where should…` / `│ …rest`); `parsePicker` drops the gutter
   and joins the lines, and `same()` ignores spaces (a wrap may split a word). Without that every long question got
   "Couldn't answer automatically" before a key was pressed (2026-11-02). The fake picker draws the box for questions > 96 chars.
+- A picker taller than its pane (long question + descriptions; Pocket's phone view resizes panes to the phone, `fitToPhone`)
+  is drawn with the tab bar and the start of the question scrolled off, and capture-pane has no scrollback of it. `parsePicker`
+  then returns `cut: true` (found by footer + rows; review by "Ready to submit your answers?"), and `looksRight` checks the
+  visible end of the question (`sameEnd`) and every label instead of the tabs. Rows off screen too → still refused (2026-11-12).
 - A message typed while a session is busy is taken in mid-turn and recorded only as an `attachment` `queued_command`
   (`commandMode: "prompt"`, `origin.kind: "human"`), never as a user line. `readChat` makes it a `you` line (`queued`);
   task notifications use the same attachment but start with `<`. Without it such messages stayed "Not picked up".

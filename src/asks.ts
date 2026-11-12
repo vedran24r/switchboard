@@ -170,29 +170,56 @@ export function captureScreen(tmux: string): string {
  * "→ answer" lines and "❯ 1. Submit answers". Undefined when no picker is on screen.
  */
 export interface PickerRow { n?: number; label: string; checked?: boolean; cursor: boolean }
-export interface PickerScreen { tabs: { label: string; done: boolean }[]; title: string; review: boolean; rows: PickerRow[]; answers: string[]; incomplete: boolean }
+export interface PickerScreen {
+  tabs: { label: string; done: boolean }[]; title: string; review: boolean; rows: PickerRow[]; answers: string[]; incomplete: boolean;
+  /** The picker is taller than the pane, so its top (tab bar, maybe the start of the question) is off screen: `tabs` is
+   * empty and `title` is only the visible end of the question ("" if none of it shows). */
+  cut?: boolean;
+}
 const TAB_BAR = /^\s*(?:←\s+)?[☐☒]\s\S/;
+const ROW = /^(❯ | {2})(\d+)\.\s(?:\[([ ✔])\]\s)?(.*)$/;
+const unbox = (l: string) => l.replace(/^\s*│\s?/, "").trim();
 export function parsePicker(screen: string): PickerScreen | undefined {
   const lines = screen.split("\n").map((l) => l.replace(/\s+$/, ""));
   let at = -1;
   for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (TAB_BAR.test(lines[i])) at = i;
-  if (at < 0) return;
-  const rest = lines.slice(at + 1);
-  if (!rest.some((l) => /Enter to select|Submit answers/.test(l))) return;
-  const tabs = [...lines[at].matchAll(/([☐☒✔])\s(.+?)(?=\s{2,}|\s*→|$)/g)].filter((m) => m[1] !== "✔").map((m) => ({ label: m[2].trim(), done: m[1] === "☒" }));
-  // The question: a long one wraps and is drawn in a quote box ("│ D1: Where should…" / "│ …the rest", seen 2026-11-02).
-  const start = rest.findIndex((l) => l.trim()), titleLines: string[] = [];
-  for (let i = Math.max(start, 0); i < rest.length && rest[i].trim(); i++) titleLines.push(rest[i].replace(/^\s*│\s?/, "").trim());
-  const title = titleLines.join(" ").trim();
+  let tabs: PickerScreen["tabs"] = [], title = "", rest: string[], cut = false;
+  if (at >= 0) {
+    rest = lines.slice(at + 1);
+    if (!rest.some((l) => /Enter to select|Submit answers/.test(l))) return;
+    tabs = [...lines[at].matchAll(/([☐☒✔])\s(.+?)(?=\s{2,}|\s*→|$)/g)].filter((m) => m[1] !== "✔").map((m) => ({ label: m[2].trim(), done: m[1] === "☒" }));
+    // The question: a long one wraps and is drawn in a quote box ("│ D1: Where should…" / "│ …the rest", seen 2026-11-02).
+    const start = rest.findIndex((l) => l.trim()), titleLines: string[] = [];
+    for (let i = Math.max(start, 0); i < rest.length && rest[i].trim(); i++) titleLines.push(unbox(rest[i]));
+    title = titleLines.join(" ").trim();
+  } else {
+    // A picker taller than the pane (long question and descriptions in a short pane, e.g. one Pocket fitted to a phone)
+    // is drawn with its top scrolled away, and there's no scrollback to read it from (2026-11-12). Still a picker if the
+    // footer, numbered rows and "Type something." or "Chat about this" show; the question is the lines right above
+    // row 1 (boxed or not), if any. The review step is known by "Ready to submit your answers?" and its Submit row.
+    rest = lines;
+    const submitRow = rest.some((l) => ROW.exec(l)?.[4].trim() === "Submit answers");
+    if (submitRow && rest.some((l) => /Ready to submit your answers\?/.test(l))) title = "Review your answers";
+    else if (!rest.some((l) => /Enter to select/.test(l)) || !rest.some((l) => /^(Type something\.|Chat about this)$/.test(ROW.exec(l)?.[4].trim() ?? ""))) return;
+    else {
+      const first = rest.findIndex((l) => ROW.test(l));
+      let i = first - 1;
+      while (i >= 0 && !rest[i].trim()) i--;
+      const titleLines: string[] = [];
+      for (; i >= 0 && rest[i].trim(); i--) titleLines.unshift(unbox(rest[i]));
+      title = titleLines.join(" ").trim();
+    }
+    cut = true;
+  }
   const rows: PickerRow[] = [], answers: string[] = [];
   for (const l of rest) {
     // Rows start at column 0 ("❯ " or two spaces); descriptions and wrapped lines are indented further.
-    const m = l.match(/^(❯ | {2})(\d+)\.\s(?:\[([ ✔])\]\s)?(.*)$/);
+    const m = l.match(ROW);
     if (m) { rows.push({ n: Number(m[2]), label: m[4].trim(), checked: m[3] === undefined ? undefined : m[3] === "✔", cursor: m[1] === "❯ " }); continue; }
     const next = l.match(/^(❯ | {2})\s+(Next|Submit)$/);
     if (next) { rows.push({ label: next[2], cursor: next[1] === "❯ " }); continue; }
     const a = l.match(/^\s*→\s+(.*)$/);
     if (a) answers.push(a[1].trim());
   }
-  return { tabs, title, review: title === "Review your answers", rows, answers, incomplete: rest.some((l) => /not answered all questions/.test(l)) };
+  return { tabs, title, review: title === "Review your answers", rows, answers, incomplete: rest.some((l) => /not answered all questions/.test(l)), ...(cut ? { cut } : {}) };
 }
