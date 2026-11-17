@@ -71,7 +71,7 @@ export function listFolders(config: Config = loadConfig()): Folder[] {
  * "＋ New" on the map or phone: a folder, an optional name and a first prompt, through spawnSession and all its guards.
  * Without a name the session is named after the folder (with -2, -3… while a live one already has that name).
  */
-export async function startFromPage(body: { cwd?: unknown; name?: unknown; prompt?: unknown }, config: Config = loadConfig()): Promise<SpawnResult> {
+export async function startFromPage(body: { cwd?: unknown; name?: unknown; prompt?: unknown; local?: unknown }, config: Config = loadConfig()): Promise<SpawnResult> {
   const cwd = String(body.cwd ?? "").trim(), prompt = String(body.prompt ?? "");
   // Control characters (a pasted newline) never go into a name.
   let name = String(body.name ?? "").replace(/[\x00-\x1f\x7f]+/g, " ").trim().slice(0, 60);
@@ -83,7 +83,7 @@ export async function startFromPage(body: { cwd?: unknown; name?: unknown; promp
     for (let n = 2; live.has(name); n++) name = `${base}-${n}`;
   }
   try {
-    return await spawnSession({ cwd, name, prompt }, config);
+    return await spawnSession({ cwd, name, prompt, local: body.local === true }, config);
   } catch (error: any) {
     throw Object.assign(error, { status: error.status ?? 400 }); // a guard said no: show its text as it is
   }

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { HOME, loadConfig } from "./config.ts";
 import { say, sendByName, startDispatcher } from "./dispatcher.ts";
 import { listSessions } from "./sessions.ts";
+import { localStatus } from "./local.ts";
 import { spawnSession } from "./spawn.ts";
 import { serve } from "./server.ts";
 
@@ -18,9 +19,11 @@ const HELP = `sb — Switchboard: one voice channel, many Claude sessions
   sb ls [--json]            every live session: state, context, folder
   sb remote on|off|status   open the map on your phone: HTTPS on your tailnet only (tailscale serve,
                             port remotePort; logins allowed: remoteLogins in ~/.switchboard/config.json)
-  sb spawn --cwd DIR --name NAME [--group G] PROMPT
+  sb spawn --cwd DIR --name NAME [--group G] [--local] PROMPT
                             start a session with a first task (guarded: blocked folders, max live
                             sessions, name clashes; in Pocket if it's running, else in Switchboard's tmux)
+                            --local: on the local model (localModel in config.json), refused if it's down
+  sb local                  is the local model up, which model, its chat page
   sb run [claude args...]   start Claude Code here inside Switchboard's tmux, so the map and phone can type
                             into it (closing the terminal ends it); for ~/.zshrc: claude() { sb run "$@"; }
   sb attach NAME            reattach to an sb-* session (prefix + d detaches and keeps it running)
@@ -63,11 +66,14 @@ async function main(argv: string[]) {
     }
     case "spawn": {
       const cwd = flag("cwd"), name = flag("name"), group = flag("group");
+      const li = rest.indexOf("--local"), local = li >= 0 && rest.splice(li, 1).length > 0;
       const prompt = rest.join(" ");
-      if (!cwd || !name || !prompt) throw new Error("usage: sb spawn --cwd DIR --name NAME [--group G] PROMPT");
-      const result = await spawnSession({ cwd, name, prompt, group });
+      if (!cwd || !name || !prompt) throw new Error("usage: sb spawn --cwd DIR --name NAME [--group G] [--local] PROMPT");
+      const result = await spawnSession({ cwd, name, prompt, group, local });
       return console.log(JSON.stringify(result));
     }
+    case "local":
+      return console.log(JSON.stringify(await localStatus()));
     case "map":
       return serve(Number(flag("port")) || undefined);
     case "up": {

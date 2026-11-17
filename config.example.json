@@ -16,5 +16,6 @@
   ],
   "sessionStyles": { "PZ": { "icon": "🧟" } },
   "vocabulary": "Switchboard, Claude, Pocket, Tailscale, GitHub, Postgres, hand off, worktree, Alex, Sam",
-  "corrections": { "get hub": "GitHub", "post gress": "Postgres" }
+  "corrections": { "get hub": "GitHub", "post gress": "Postgres" },
+  "localModel": { "command": "claude-local", "url": "http://my-pc:1234", "startHint": "Start the model on the PC first." }
 }

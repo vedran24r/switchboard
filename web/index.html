@@ -464,6 +464,17 @@
   #list .trustwait { font-size: 15px; padding: 10px 12px; }
   #list h1 { display: flex; align-items: center; justify-content: space-between; }
   #list h1 .newbtn { font-size: 14px; padding: 6px 12px; }
+  /* 🦙 Local: sessions on the local model (llama.cpp on another machine). The button shows only when localModel is set. */
+  .newbtns { display: flex; gap: 6px; }
+  .newbtn.localbtn { border-color: #a16207; background: color-mix(in srgb, #a16207 14%, var(--panel)); }
+  .nslocal { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
+  .nslocal[hidden] { display: none; }
+  .nslocal b { color: var(--ink); }
+  .nslocal .up { color: #2fbf71; font-weight: 600; } .nslocal .down { color: #e5484d; font-weight: 600; }
+  .nslocal a { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .nscheck { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  .nscheck[hidden] { display: none; }
+  .srow-s .lm { margin-right: 4px; }
   .nsdone { margin: 0 16px 8px; font-size: 12.5px; color: #2fbf71; }
   .nsdone:empty { display: none; }
   #newsheet { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: grid; place-items: center; }
@@ -526,11 +537,12 @@
 
 <div id="offline" role="status">No connection to the Mac. Retrying… Unsent messages and recordings are kept.</div>
 <div id="lightbox" onclick="this.classList.remove('open')"><img alt="Attached image"></div>
-<section id="list" aria-label="Sessions"><h1>Sessions <button type="button" class="newbtn" id="newbtn-list" title="Start a new session in a folder">＋ New</button></h1>
+<section id="list" aria-label="Sessions"><h1>Sessions <span class="newbtns"><button type="button" class="newbtn localbtn" id="localbtn-list" title="Start a session on the local model (free, slower), or open its chat page" hidden>🦙 Local</button><button type="button" class="newbtn" id="newbtn-list" title="Start a new session in a folder">＋ New</button></span></h1>
   <div class="nsdone" id="ns-done"></div><div class="trustwaits" id="trustwaits-list"></div><div id="rows"></div></section>
 <div id="newsheet" role="dialog" aria-label="New session" hidden>
   <div class="nsbox">
-    <div class="nshead"><button type="button" class="nsclose" id="ns-close">Cancel</button><h2>New session</h2></div>
+    <div class="nshead"><button type="button" class="nsclose" id="ns-close">Cancel</button><h2 id="ns-title">New session</h2></div>
+    <div class="nslocal" id="ns-local" hidden></div>
     <div id="ns-pick">
       <input id="ns-filter" type="search" placeholder="Filter folders…" autocomplete="off" aria-label="Filter folders">
       <div class="nsfolders" id="ns-folders"><div class="hint">Loading…</div></div>
@@ -539,6 +551,7 @@
       <div class="nsfolder"><span id="ns-folder"></span><button type="button" id="ns-change">Change</button></div>
       <label>Name (optional)<input id="ns-name" maxlength="60" autocomplete="off"></label>
       <label>First prompt<textarea id="ns-prompt" rows="4" placeholder="What should it do first?"></textarea></label>
+      <label class="nscheck" id="ns-localrow" hidden><input type="checkbox" id="ns-localon"> 🦙 Run on the local model (free, slower, smaller context)</label>
       <div class="nserror" id="ns-error" role="alert"></div>
       <button type="submit" id="ns-start">Start session</button>
     </form>
@@ -2461,6 +2474,8 @@ function renderAgents(s) {
    Rows never move by themselves (Vedran: re-sorting by state mid-use is confusing); the ? mark, the unread dot and the
    "Waiting on you" cards say which need you. */
 let lastList = [];
+/* A session answered by a model that isn't Claude (claude-local → llama.cpp). "<synthetic>" is Claude Code's own error line. */
+const isLocal = (s) => !!s.model && !/^(claude|<synthetic>)/i.test(s.model);
 function renderList(list) {
   lastList = list;
   const sorted = [...list].sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0) || a.sessionId.localeCompare(b.sessionId));
@@ -2468,7 +2483,7 @@ function renderList(list) {
     const label = s.state === "needs-you" ? "needs you" : s.state, line = (s.doing || "").replace(/\s+/g, " ").trim();
     return `<button type="button" class="srow-s${s.sessionId === selected ? " on" : ""}" data-id="${esc(s.sessionId)}" style="--tint:${esc(s.color || "var(--accent)")}">
       <span class="av" style="background:${esc(s.color)}">${esc(s.icon)}${askOf(s) ? `<span class="q">?</span>` : ""}${isUnread(s) ? `<span class="u"></span>` : ""}</span>
-      <span class="nm" title="${esc(s.name)}">${esc(s.display || s.name)}<span class="st ${s.state}">${label}</span></span>
+      <span class="nm" title="${esc(s.name)}">${isLocal(s) ? `<span class="lm" title="Local model: ${esc(s.model)}">🦙</span>` : ""}${esc(s.display || s.name)}<span class="st ${s.state}">${label}</span></span>
       <span class="rt${s.needsHandoff ? " hot" : ""}">${s.agents?.length ? `<span class="ag" title="${esc(agentsTip(s.agents))}">🤖${s.agents.length > 1 ? s.agents.length : ""}</span> ` : ""}${Math.round(s.contextTokens / 1000)}k · ${ago(s.lastActivity)}</span>
       <span class="ln">${esc(line || short(s.cwd))}</span></button>`;
   }).join("") || `<div class="empty">No live sessions.</div>`;
@@ -2486,11 +2501,31 @@ $("rows").addEventListener("click", (e) => { const b = e.target.closest(".srow-s
 /* "＋ New": pick a folder (recent ones first, from GET /api/folders: blocked folders are never listed), an optional
    name and the first prompt. POST /api/spawn goes through spawnSession, so its guards (blocked folders, the live
    session limit) decide, and their text is shown as it is. On success it's back to the Sessions list. */
-let newFolders = [], newCwd = "";
-async function openNew() {
+let newFolders = [], newCwd = "", localInfo = null;
+/* 🦙 Local: GET /api/local says whether localModel is set (else the button stays hidden), whether it's up, and its chat page. */
+async function loadLocal() {
+  try { const res = await request("/api/local", { cache: "no-store" }, 8000); localInfo = res.ok ? await res.json() : null; } catch { localInfo = null; }
+  $("localbtn-list").hidden = !localInfo?.configured; $("ns-localrow").hidden = !localInfo?.configured;
+  renderLocal();
+  return localInfo;
+}
+function renderLocal() {
+  const box = $("ns-local"), on = $("ns-localon").checked;
+  $("ns-title").textContent = on ? "New local session" : "New session";
+  box.hidden = !on;
+  if (!on) return;
+  const i = localInfo;
+  if (!i) { box.innerHTML = "Checking the local model…"; return; }
+  const chat = i.chatUrl ? ` · <a href="${esc(i.chatUrl)}" target="_blank" rel="noopener">Open chat page ↗</a>` : "";
+  box.innerHTML = i.up
+    ? `🦙 <b>${esc(i.model || "local model")}</b> <span class="up">up</span>${chat}<br>Runs in Switchboard's tmux, so you can type into it here and on the phone.`
+    : `🦙 Local model <span class="down">down</span> (${esc(i.error || "no answer")})${chat}${i.startHint ? `<br>${esc(i.startHint)}` : ""}`;
+}
+async function openNew({ local = false } = {}) {
   if (selected) select(null);
   $("newsheet").hidden = false;
   if (phone && history.state?.sb !== "new") history.pushState({ sb: "new" }, "");
+  $("ns-localon").checked = local; localInfo = local ? null : localInfo; renderLocal(); if (local) loadLocal();
   $("ns-filter").value = ""; $("ns-name").value = ""; $("ns-prompt").value = ""; $("ns-error").textContent = "";
   newStep("pick");
   $("ns-folders").dataset.html = ""; $("ns-folders").innerHTML = `<div class="hint">Loading…</div>`;
@@ -2518,6 +2553,9 @@ function renderFolders() {
   if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
 }
 $("newbtn-list").onclick = () => openNew();
+$("localbtn-list").onclick = () => openNew({ local: true });
+$("ns-localon").addEventListener("change", () => { renderLocal(); if ($("ns-localon").checked) loadLocal(); });
+loadLocal();
 $("ns-close").onclick = () => closeNew();
 $("ns-change").onclick = () => newStep("pick");
 $("ns-filter").addEventListener("input", renderFolders);
@@ -2533,9 +2571,10 @@ $("ns-form").addEventListener("submit", async (e) => {
   if (!prompt) { $("ns-error").textContent = "Write the first prompt: it's what the session starts working on."; return; }
   btn.disabled = true; btn.textContent = "Starting…"; $("ns-error").textContent = "";
   try {
-    const r = await post("/api/spawn", { cwd: newCwd, name, prompt }, 90_000);
+    const local = $("ns-localon").checked;
+    const r = await post("/api/spawn", { cwd: newCwd, name, prompt, ...(local ? { local: true } : {}) }, 90_000);
     closeNew();
-    $("ns-done").textContent = `Started ${r.name} in ${$("ns-folder").textContent}. It shows up here once it's running (a folder opened for the first time asks to be trusted first).`;
+    $("ns-done").textContent = `Started ${r.local ? "🦙 " : ""}${r.name} in ${$("ns-folder").textContent}. It shows up here once it's running (a folder opened for the first time asks to be trusted first).`;
     setTimeout(() => { if ($("ns-done").textContent.startsWith(`Started ${r.name} `)) $("ns-done").textContent = ""; }, 60_000);
     if (phone) setTab("list");
   } catch (err) { $("ns-error").textContent = err.net ? "No connection to the Mac. Nothing was started; try again." : err.message; }

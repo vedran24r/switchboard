@@ -8,7 +8,8 @@ sb up                         # dispatcher + map, opens the browser
 sb map                        # serve only the map (what launchd runs)
 sb ls [--json]                # every live session: state, context (! = hand off), last activity, folder
 sb say "what's waiting on me?"            # type into the dispatcher from a terminal
-sb spawn --cwd ~/Projects/x --name "short name" [--group G] "first task"   # start a session (guarded)
+sb spawn --cwd ~/Projects/x --name "short name" [--group G] [--local] "first task"   # start a session (guarded; --local = local model)
+sb local                                                       # is the local model up, which one, its chat page
 sb send "PZ" "check the inventory"        # type into a session by name (profiles in sendProfiles only)
 sb pulse "PZ" "Misc" --kind needs-you     # flash those sessions' rows on the page (needs-you | continue | info)
 sb remote on|off|status       # the map on your phone over Tailscale (see "Reaching it")
@@ -38,6 +39,22 @@ same tmux, started through your login shell.
 
 It goes through the same guards as `sb spawn` (blocked folders, `maxLiveSpawned`, unique names); a refusal is shown as
 it is. By hand: `sb spawn --cwd ~/Projects/x --name "x" "first task"`.
+
+### 🦙 Local sessions (a local model instead of Claude)
+If `localModel` is set in `~/.switchboard/config.json`, a **🦙 Local** button sits next to ＋ New:
+```json
+"localModel": { "command": "claude-local", "url": "http://my-pc:1234", "startHint": "how to start it when it's down" }
+```
+- `command` is a launcher that runs Claude Code against the local server and takes the same arguments as `claude`.
+- `url` is the llama.cpp server. Switchboard asks `<url>/v1/models` whether it's up and which model it serves.
+  It never starts or stops the model.
+- The button opens ＋ New in local mode. The top of the sheet shows the model and whether it's up, plus
+  **Open chat page ↗** (the server's own chat page). The tick box under the prompt switches local mode on and off.
+- Local sessions always start in Switchboard's own tmux, never Pocket, because Pocket can only start `claude`.
+  You can type into them from the page and the phone.
+- A session whose model isn't Claude gets a 🦙 in the list.
+- By hand: `sb spawn --local --cwd ~/Projects/x --name "x" "first task"`. Check the model with `sb local`.
+  A spawn is refused, with `startHint`, while the model is down.
 
 In a folder Claude hasn't opened before, the new session first asks "trust this folder?" and isn't in the list yet.
 It shows as a grey ⏳ row at the top of the session list with **Trust it**.

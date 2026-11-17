@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { HOME, STATE_DIR, expand, isBlocked, loadConfig, profileFor, type Config } from "./config.ts";
+import { localStatus } from "./local.ts";
 import { listSessions } from "./sessions.ts";
 import { OWN_TMUX, shQuote, uniqueName } from "./tmux.ts";
 
@@ -11,6 +12,8 @@ export interface SpawnRequest {
   prompt: string;
   /** Sessions split out of the same dictated message share a group, so the map draws them together. */
   group?: string;
+  /** Run it on the local model (config.localModel.command) instead of Claude: always in our own tmux. */
+  local?: boolean;
 }
 
 export interface SpawnResult {
@@ -19,6 +22,7 @@ export interface SpawnResult {
   profile: string;
   cwd: string;
   attach: string;
+  local?: boolean;
 }
 
 const fail = (message: string): never => {
@@ -45,13 +49,14 @@ async function pocketUp(config: Config, key: string | undefined): Promise<boolea
  * Starts `claude <args>` in our own tmux, through your login shell so the session gets your PATH and settings, like a
  * terminal would. Every argument is shQuote'd. Used by the "tmux" spawn backend and by taking over a read-only session.
  * configDir: CLAUDE_CONFIG_DIR for the session ("" = the default ~/.claude, left unset).
+ * command: what to run instead of claude (the local model's launcher); it gets the same arguments.
  */
-export function startInOwnTmux(tname: string, cwd: string, configDir: string, args: string[], tail: string[] = [], config: Config = loadConfig()) {
+export function startInOwnTmux(tname: string, cwd: string, configDir: string, args: string[], tail: string[] = [], config: Config = loadConfig(), command?: string) {
   const uploads = expand(config.uploadsDir);
   mkdirSync(uploads, { recursive: true });
   const shell = process.env.SHELL || "/bin/zsh";
   // SWITCHBOARD_CLAUDE_BIN: tests only (a login shell rebuilds PATH, so a fake `claude` on PATH isn't enough).
-  const bin = process.env.SWITCHBOARD_CLAUDE_BIN ? shQuote(process.env.SWITCHBOARD_CLAUDE_BIN) : "command claude";
+  const bin = command ? shQuote(command) : process.env.SWITCHBOARD_CLAUDE_BIN ? shQuote(process.env.SWITCHBOARD_CLAUDE_BIN) : "command claude";
   const claude = `exec ${bin} ${[...args, "--add-dir", uploads, ...tail].map(shQuote).join(" ")}`;
   try {
     execFileSync("tmux", [...OWN_TMUX, "new-session", "-d", "-s", tname, "-c", cwd, "-x", "120", "-y", "40",
@@ -81,6 +86,18 @@ export async function spawnSession(req: SpawnRequest, config: Config = loadConfi
   }
 
   const profile = profileFor(cwd, config);
+  if (req.local) {
+    // Pocket can only start claude itself, so local sessions always go into our own tmux (typeable from the map).
+    const lm = await localStatus(config);
+    if (!lm.configured) fail("No local model set up: add localModel { command, url } to ~/.switchboard/config.json");
+    if (!lm.up) fail(`The local model isn't answering at ${lm.chatUrl} (${lm.error}).${lm.startHint ? ` ${lm.startHint}` : ""}`);
+    const tname = uniqueName(profile, cwd);
+    startInOwnTmux(tname, cwd, config.configDirs[profile] ? expand(config.configDirs[profile]) : "", ["-n", name], ["--", prompt], config, config.localModel.command);
+    const result: SpawnResult = { name, backend: "tmux", profile, cwd, attach: `sb attach ${tname}`, local: true };
+    mkdirSync(STATE_DIR, { recursive: true });
+    appendFileSync(path.join(STATE_DIR, "spawned.jsonl"), JSON.stringify({ ...result, group: req.group ?? name, at: Date.now() }) + "\n");
+    return result;
+  }
   const key = pocketKey(config);
   const usePocket = config.backend === "pocket" || (config.backend === "auto" && (await pocketUp(config, key)));
   let result: SpawnResult;

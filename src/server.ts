@@ -6,6 +6,7 @@ import { endSession, listFolders, renameSession, startFromPage, takeOver, trustS
 import { sessionChanges, sessionDiff } from "./changes.ts";
 import { loadConfig } from "./config.ts";
 import { acceptTrust, dispatcherFeed, isDispatcher, pressKey, say, sayTo, sessionChat, sessionScreen, startDispatcher } from "./dispatcher.ts";
+import { localStatus } from "./local.ts";
 import { listSessions } from "./sessions.ts";
 import { answerPicker } from "./picker.ts";
 import { transcribe, warmUp } from "./voice.ts";
@@ -151,6 +152,7 @@ export function serve(port = loadConfig().port) {
       if (url.pathname === "/api/session/changes") return json(200, sessionChanges(url.searchParams.get("id") ?? ""));
       if (url.pathname === "/api/session/diff") return json(200, sessionDiff(url.searchParams.get("id") ?? "", url.searchParams.get("file") ?? ""));
       if (url.pathname === "/api/folders") return json(200, { folders: listFolders() });
+      if (url.pathname === "/api/local") return json(200, await localStatus());
       if (url.pathname === "/api/session") return json(200, sessionChat(url.searchParams.get("id") ?? ""));
       if (url.pathname === "/api/state") {
         const config = loadConfig();

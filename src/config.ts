@@ -45,6 +45,9 @@ export interface Config {
   uploadsDir: string;
   /** Delete Switchboard's own uploads older than this many days (0 = keep). */
   uploadKeepDays: number;
+  /** A local model (llama.cpp server) for "🦙 Local" sessions: `command` starts Claude Code on it (e.g. claude-local, which
+   *  takes the same arguments as claude), `url` is its server (health + chat page), `startHint` says how to start it. Empty = off. */
+  localModel: { command: string; url: string; startHint?: string };
 }
 
 const DEFAULTS: Config = {
@@ -73,6 +76,7 @@ const DEFAULTS: Config = {
   corrections: {},
   uploadsDir: "~/.switchboard/uploads",
   uploadKeepDays: 7,
+  localModel: { command: "", url: "" },
 };
 
 export function loadConfig(): Config {

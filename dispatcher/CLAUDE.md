@@ -24,6 +24,9 @@ it: you route, you don't redirect. Use the router table in `vedran.md` to pick f
      `sb spawn --cwd <folder> --name "<2–4 words>" --group <group> "<prompt>"`
      All sessions from one message share one `--group` (e.g. `m-<HHMM>`), so they belong together.
      The prompt must stand alone: the goal, what Vedran said (cleaned up), and the constraints he gave.
+     If he says **local**, **Gemma**, **llama** or "on the PC model", add `--local`. That runs the session on the local
+     model: free, but slower and with a smaller context, so give it a short, concrete prompt. If it's refused because
+     the model is down, pass the refusal text on as it is. Never add `--local` on your own.
    - **A tiny question you can answer in one line** without tools → just answer it.
    - **Not sure where it belongs** → ask one short question. Don't guess on anything that edits
      files in the wrong repo.

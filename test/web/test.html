@@ -1281,6 +1281,44 @@ const HELPERS = () => {
     return "ok";
   });
 
+  await check("🦙 Local: hidden without localModel; opens New in local mode with status + chat link; spawn sends local; row mark for non-Claude models", P, async () => {
+    setTab("list"); select(null); $("ns-done").textContent = "";
+    const r = { hiddenByDefault: $("localbtn-list").hidden };
+    const real = window.fetch, spawns = [];
+    let local = { configured: true, up: false, chatUrl: "http://pc:1234", startHint: "On the PC: run Local Model.", error: "no answer in 3 s" };
+    window.fetch = (u, o) => {
+      if (String(u) === "/api/local") return Promise.resolve(new Response(JSON.stringify(local), { status: 200 }));
+      if (String(u) === "/api/spawn") { spawns.push(JSON.parse(o.body)); return Promise.resolve(new Response(JSON.stringify({ name: "alpha", backend: "tmux", profile: "claude", cwd: "/x/alpha", attach: "a", local: true }), { status: 200 })); }
+      return real(u, o);
+    };
+    try {
+      await loadLocal();
+      r.shown = !$("localbtn-list").hidden;
+      $("localbtn-list").click();
+      for (let i = 0; i < 40 && !/down/.test($("ns-local").textContent); i++) await T.sleep(50);
+      r.down = [$("ns-title").textContent, /down/.test($("ns-local").textContent), /On the PC: run Local Model\./.test($("ns-local").textContent), $("ns-local").querySelector("a")?.getAttribute("href"), $("ns-localon").checked];
+      for (let i = 0; i < 40 && !$("ns-folders").querySelector(".nsf"); i++) await T.sleep(100);
+      $("ns-filter").value = "alph"; $("ns-filter").dispatchEvent(new Event("input"));
+      $("ns-folders").querySelector(".nsf").click();
+      local = { configured: true, up: true, model: "gemma-x", chatUrl: "http://pc:1234" };
+      $("ns-localon").checked = false; $("ns-localon").dispatchEvent(new Event("change"));
+      r.off = [$("ns-local").hidden, $("ns-title").textContent];
+      $("ns-localon").checked = true; $("ns-localon").dispatchEvent(new Event("change"));
+      for (let i = 0; i < 40 && !/gemma-x/.test($("ns-local").textContent); i++) await T.sleep(50);
+      r.up = /gemma-x up/.test($("ns-local").textContent);
+      $("ns-prompt").value = "disk space"; $("ns-start").click();
+      for (let i = 0; i < 30 && !$("newsheet").hidden; i++) await T.sleep(50);
+      r.sent = spawns.map((b) => [b.local, b.prompt]);
+      r.done = /^Started 🦙 alpha/.test($("ns-done").textContent);
+      r.mark = [isLocal({ model: "gemma-4-26b-a4b-it" }), isLocal({ model: "claude-opus-5-5" }), isLocal({ model: "<synthetic>" }), isLocal({})];
+    } finally { window.fetch = real; await loadLocal(); }
+    r.hiddenAgain = $("localbtn-list").hidden;
+    $("ns-done").textContent = ""; setTab("chat");
+    T.eq(r, { hiddenByDefault: true, shown: true, down: ["New local session", true, true, "http://pc:1234", true], off: [true, "New session"], up: true,
+      sent: [[true, "disk space"]], done: true, mark: [true, false, false, false], hiddenAgain: true }, "local");
+    return "ok";
+  });
+
   await fetch("/test/results", { method: "POST", body: JSON.stringify(results) });
 })();
 </script>

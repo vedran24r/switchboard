@@ -154,5 +154,9 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   The page loads it on open and ↻ only (no polling). Tests build the repo with `makeRepo` (fixtures.ts, hooks/signing off).
 - After a /compact (or auto-compact) Claude Code writes its summary as a `user` line with `isCompactSummary: true`. `readChat` and
   `parseTranscript` skip it, or it shows up as Vedran's last message and hides the reply before it (2026-11-04).
+- 🦙 Local (`src/local.ts`, `localModel` in config): `GET /api/local` → `/v1/models` on the llama.cpp server (3 s timeout).
+  `spawnSession({ local })` checks it first and always uses our own tmux with `startInOwnTmux(..., command)`; Pocket can only
+  start `claude`. The launcher takes claude's arguments. The page marks rows whose transcript `model` isn't `claude*`/`<synthetic>`
+  (`isLocal`). The button stays hidden while `localModel` is unset (the test server has none; the browser test stubs `/api/local`).
 - The session list is in start order (`Session.startedAt`, the registry's `startedAt`), never re-sorted by state: Vedran
   found rows jumping around mid-use confusing (2026-11-04). Marks and the "Waiting on you" cards show who needs him.
