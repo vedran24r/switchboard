@@ -593,7 +593,10 @@ test("local model: status from /v1/models; spawn --local runs localModel.command
   const http = await import("node:http");
   const { chmodSync, readFileSync: read } = await import("node:fs");
   const { localStatus } = await import("../src/local.ts");
-  const srv = http.createServer((req, res) => { res.writeHead(req.url === "/v1/models" ? 200 : 404, { "content-type": "application/json" }); res.end(JSON.stringify({ data: [{ id: "gemma-test" }] })); });
+  const srv = http.createServer((req, res) => {
+    if (req.url === "/locked/v1/models") { res.writeHead(401); res.end(); return; } // llama-server with --api-key
+    res.writeHead(req.url === "/v1/models" ? 200 : 404, { "content-type": "application/json" }); res.end(JSON.stringify({ data: [{ id: "gemma-test" }] }));
+  });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
   const url = `http://127.0.0.1:${(srv.address() as any).port}`;
   const dir = mkdtempSync(path.join(os.tmpdir(), "sb-local-")), bin = path.join(dir, "claude-local"), log = path.join(dir, "local.log");
@@ -604,6 +607,8 @@ test("local model: status from /v1/models; spawn --local runs localModel.command
     assert.deepEqual(await localStatus({ ...config, localModel: { command: "", url: "" } }), { configured: false, up: false });
     const up = { ...config, backend: "pocket" as const, localModel: { command: bin, url: url + "/", startHint: "Start it on the PC." } };
     assert.deepEqual(await localStatus(up), { configured: true, up: true, model: "gemma-test", chatUrl: url, startHint: "Start it on the PC." });
+    const locked = await localStatus({ ...config, localModel: { command: bin, url: url + "/locked" } });
+    assert.equal(locked.up, true, "a password (401) still means it's up"); assert.equal(locked.model, undefined);
     await assert.rejects(spawnSession({ cwd: fx.folders.a, name: "L", prompt: "p", local: true }, { ...config, localModel: { command: "", url: "" } }), /No local model set up/);
     const down = { ...up, localModel: { ...up.localModel, url: "http://127.0.0.1:9" } };
     await assert.rejects(spawnSession({ cwd: fx.folders.a, name: "L", prompt: "p", local: true }, down), /isn't answering at http:\/\/127\.0\.0\.1:9 .*Start it on the PC\./);

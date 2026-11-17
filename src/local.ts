@@ -23,6 +23,8 @@ export async function localStatus(config: Config = loadConfig()): Promise<LocalS
   const out: LocalStatus = { configured: true, up: false, chatUrl: base, startHint: lm.startHint || undefined };
   try {
     const res = await fetch(`${base}/v1/models`, { signal: AbortSignal.timeout(3000) });
+    // 401/403 = the server answers but has a password (llama-server --api-key): it's up, we just can't see the model name.
+    if (res.status === 401 || res.status === 403) return { ...out, up: true };
     if (!res.ok) return { ...out, error: `HTTP ${res.status}` };
     const body: any = await res.json().catch(() => ({}));
     return { ...out, up: true, model: body?.data?.[0]?.id ?? body?.models?.[0]?.name };
