@@ -198,7 +198,7 @@ export async function sendByName(name: string, text: string, config: Config = lo
 export const KEYS = new Map<string, string>([
   ...["1", "2", "3", "4", "5", "6", "7", "8", "9", "y", "n"].map((k): [string, string] => [k, k]),
   ["esc", "Escape"], ["enter", "Enter"], ["up", "Up"], ["down", "Down"], ["left", "Left"], ["right", "Right"], ["space", "Space"],
-  ["tab", "Tab"], ["stab", "BTab"], ["ctrlc", "C-c"],
+  ["tab", "Tab"], ["stab", "BTab"], ["ctrlc", "C-c"], ["bksp", "BSpace"],
 ]);
 /** What Pocket's /key API takes (its KEYS, same names); anything else goes straight to tmux. */
 const POCKET_KEYS = new Set(["1", "2", "3", "4", "5", "y", "n", "esc", "enter", "up", "down", "tab", "stab", "ctrlc"]);

@@ -387,8 +387,8 @@ test("typing into Pocket sessions: names Pocket's API rejects (uppercase) go str
 
 test("quick keys: page names → tmux key names; nothing else is a key", async () => {
   const { tmuxKeyArgs } = await import("../src/dispatcher.ts");
-  const map = Object.fromEntries(["esc", "enter", "up", "down", "left", "right", "space", "tab", "stab", "ctrlc", "1", "5", "9", "y"].map((k) => [k, tmuxKeyArgs(k)]));
-  assert.deepEqual(map, { esc: ["Escape"], enter: ["Enter"], up: ["Up"], down: ["Down"], left: ["Left"], right: ["Right"], space: ["Space"], tab: ["Tab"], stab: ["BTab"], ctrlc: ["C-c"],
+  const map = Object.fromEntries(["esc", "enter", "up", "down", "left", "right", "space", "tab", "stab", "ctrlc", "bksp", "1", "5", "9", "y"].map((k) => [k, tmuxKeyArgs(k)]));
+  assert.deepEqual(map, { esc: ["Escape"], enter: ["Enter"], up: ["Up"], down: ["Down"], left: ["Left"], right: ["Right"], space: ["Space"], tab: ["Tab"], stab: ["BTab"], ctrlc: ["C-c"], bksp: ["BSpace"],
     1: ["-l", "1"], 5: ["-l", "5"], 9: ["-l", "9"], y: ["-l", "y"] });
   for (const bad of ["C-c", "Escape", "constructor", "toString", "__proto__", "rm -rf", "", "10", "a"]) assert.throws(() => tmuxKeyArgs(bad), /unknown key/, bad);
 });

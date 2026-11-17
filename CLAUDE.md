@@ -160,3 +160,6 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   (`isLocal`). The button stays hidden while `localModel` is unset (the test server has none; the browser test stubs `/api/local`).
 - The session list is in start order (`Session.startedAt`, the registry's `startedAt`), never re-sorted by state: Vedran
   found rows jumping around mid-use confusing (2026-11-04). Marks and the "Waiting on you" cards show who needs him.
+- The sheet's chips/keys/type bar (`#p-tools`) is behind a "⌨ Keys" toggle (`toolsOpen`, closed on every load; open it covered
+  much of a phone screen, 2026-11-17). Browser tests' HELPERS set `toolsOpen = true`; the toggle has its own check. ⌫ = `bksp` → tmux `BSpace`.
+  Phone header: `.close` (Back) sits inside `.phead`, which is a two-line flex row on phone (Details is a dropdown there, like the desk).

@@ -63,6 +63,7 @@ const HELPERS = () => {
     },
   };
   sayText = (m) => { T.sent.push(m); };
+  toolsOpen = true; // the keys bar starts closed; most checks use what's inside it (its own check covers the toggle)
   return true;
 };
 
@@ -343,7 +344,20 @@ const HELPERS = () => {
     T.eq(r, { hiddenInChat: true, shown: true, grew: true, saved: true }, "zoom");
     return "ok";
   });
-  await check("quick keys: Stop, arrows, Enter, Space, Tab, Shift+Tab, Esc, 1–9 post the right keys; Ctrl+C needs a second tap", A, async () => {
+  await check("keys bar: closed by default (only the ⌨ Keys toggle shows); the toggle opens and closes it", A, async () => {
+    toolsOpen = false;
+    try {
+      select(T.node("Beta").s.sessionId);
+      for (let i = 0; i < 30 && !popup.canType; i++) await T.sleep(100);
+      const shown = (el) => !!el && el.getClientRects().length > 0, tg = () => $("p-tools").querySelector("[data-ttoggle]");
+      const r = { closed: [shown(tg()), shown($("p-tools").querySelector(".stop")), shown($("p-tools").querySelector(".qchip")), tg().getAttribute("aria-expanded")] };
+      tg().click(); r.open = [shown($("p-tools").querySelector(".stop")), shown($("p-tools").querySelector('[data-key="bksp"]')), tg().getAttribute("aria-expanded")];
+      tg().click(); r.again = shown($("p-tools").querySelector(".stop"));
+      T.eq(r, { closed: [true, false, false, "false"], open: [true, true, "true"], again: false }, "toggle");
+      return "ok";
+    } finally { toolsOpen = true; select(null); }
+  });
+  await check("quick keys: Stop, arrows, Enter, Space, Tab, Shift+Tab, ⌫, Esc, 1–9 post the right keys; Ctrl+C needs a second tap", A, async () => {
     const real = window.fetch, keys = [];
     window.fetch = (u, o) => { if (String(u) === "/api/session/key") keys.push(JSON.parse(o.body)); return real(u, o); };
     try {
@@ -351,16 +365,16 @@ const HELPERS = () => {
       for (let i = 0; i < 30 && !popup.canType; i++) await T.sleep(100);
       const bar = () => $("p-tools").querySelector(".qkeys");
       T.assert(bar() && !$("p-tools").classList.contains("readonly"), "keys bar, usable");
-      T.eq([...bar().querySelectorAll("button")].map((b) => b.textContent), ["■ Stop", "↑", "↓", "←", "→", "Enter", "Space", "Tab", "⇧Tab", "Esc", "Ctrl+C", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "buttons");
+      T.eq([...bar().querySelectorAll("button")].map((b) => b.textContent), ["■ Stop", "↑", "↓", "←", "→", "Enter", "Space", "Tab", "⇧Tab", "⌫", "Esc", "Ctrl+C", "1", "2", "3", "4", "5", "6", "7", "8", "9"], "buttons");
       for (const b of [...bar().querySelectorAll("button")].filter((b) => b.dataset.key !== "ctrlc")) { b.click(); await T.sleep(60); }
       for (let i = 0; i < 30 && !/Pressed 9/.test($("p-quicknote").textContent); i++) await T.sleep(100);
       const ctrl = bar().querySelector('[data-key="ctrlc"]');
       ctrl.click(); await T.sleep(300);
       const r = { firstTap: keys.length, armed: ctrl.textContent };
-      ctrl.click(); for (let i = 0; i < 30 && keys.length < 20; i++) await T.sleep(100);
-      T.eq(keys.map((k) => k.key), ["esc", "up", "down", "left", "right", "enter", "space", "tab", "stab", "esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "ctrlc"], "keys posted in order");
+      ctrl.click(); for (let i = 0; i < 30 && keys.length < 21; i++) await T.sleep(100);
+      T.eq(keys.map((k) => k.key), ["esc", "up", "down", "left", "right", "enter", "space", "tab", "stab", "bksp", "esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "ctrlc"], "keys posted in order");
       T.assert(keys.every((k) => k.sessionId === T.node("Beta").s.sessionId), "to Beta");
-      T.eq([r.firstTap, r.armed, ctrl.textContent], [19, "Tap again: Ctrl+C", "Ctrl+C"], "Ctrl+C confirm");
+      T.eq([r.firstTap, r.armed, ctrl.textContent], [20, "Tap again: Ctrl+C", "Ctrl+C"], "Ctrl+C confirm");
       for (let i = 0; i < 30 && !/Ctrl\+C/.test($("p-quicknote").textContent); i++) await T.sleep(100);
       T.assert(/Pressed Ctrl\+C/.test($("p-quicknote").textContent) && !$("p-quicknote").classList.contains("bad"), $("p-quicknote").textContent);
       return "ok";
@@ -1218,6 +1232,24 @@ const HELPERS = () => {
     return "ok";
   });
 
+  await check("phone: the sheet's header is two short lines (Back, name, Rename/End; status, Details dropdown); keys bar closed until ⌨ Keys", P, async () => {
+    toolsOpen = false; setTab("list");
+    [...document.querySelectorAll("#rows .srow-s")].find((x) => x.querySelector(".nm").title === "Beta").click();
+    for (let i = 0; i < 30 && !popup.canType; i++) await T.sleep(100);
+    const top = (el) => Math.round(el.getBoundingClientRect().top), mid = (el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); };
+    const close = panel.querySelector(".close"), name = $("p-name"), act = $("p-actions").querySelector("button"), meta = $("p-meta"), sum = $("p-details").querySelector("summary");
+    const near = (a, b) => Math.abs(mid(a) - mid(b)) <= 8;
+    const r = { line1: near(close, name) && near(name, act), line2: near(meta, sum), below: top(meta) > top(name),
+      headShort: $("p-view").getBoundingClientRect().top - panel.getBoundingClientRect().top < 150, pageNotWider: document.documentElement.scrollWidth <= innerWidth,
+      details: $("p-details").open, keysHidden: !$("p-tools").querySelector(".stop").getClientRects().length, toggle: !!$("p-tools").querySelector("[data-ttoggle]")?.getClientRects().length };
+    sum.click(); await T.sleep(50);
+    r.dropdown = getComputedStyle($("p-info")).position === "absolute" && $("p-info").getBoundingClientRect().right <= innerWidth;
+    $("p-log").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); r.closesOutside = !$("p-details").open;
+    closePopup(); for (let i = 0; i < 20 && selected; i++) await T.sleep(50);
+    setTab("chat"); toolsOpen = true;
+    T.eq(r, { line1: true, line2: true, below: true, headShort: true, pageNotWider: true, details: false, keysHidden: true, toggle: true, dropdown: true, closesOutside: true }, "phone header");
+    return "ok";
+  });
   await check("phone: the sheet's Changes view fits the screen; a diff scrolls sideways inside it, not the page; actions reachable", P, async () => {
     setTab("list");
     [...document.querySelectorAll("#rows .srow-s")].find((x) => x.querySelector(".nm").title === "Beta").click();
