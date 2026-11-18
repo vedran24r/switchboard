@@ -167,3 +167,8 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
   `ai.pocket-sessions` booted out + disabled (`launchctl enable … && launchctl bootstrap gui/$UID ~/Library/LaunchAgents/ai.pocket-sessions.plist`
   to undo). Leftover `pk-*` sessions on `tmux -L pocket` still work: with Pocket down, typing/keys go straight to that tmux
   (multi-line text is flattened to one line there). The Pocket code paths stay for now.
+- A UserPromptSubmit hook that blocks (the context guard, `~/.claude/hooks/context-guard.py`, blocks the first prompt after
+  1 h idle at 150k+) writes only a `system` line with `promptSubmitEnding.ending.kind: "blocked_by_hook"` (+ `reason`;
+  `content` ends "Original prompt: …") and puts the text back in the input box. `readChat` makes it `role: "blocked"`
+  (never drawn as a row); `settlePending` marks the pending bubble `blocked` with the reason. Resend presses Enter
+  (`/api/session/key`): typing the text again would double it. Shape captured 2026-11-18 (2.1.316, block-once hook).

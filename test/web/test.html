@@ -590,6 +590,31 @@ const HELPERS = () => {
       line: "🤖 2 agents running", items: ["Search the logs", "Build the view"], goneAfter: true }, "agents");
     return "ok";
   });
+  await check("blocked by a hook (context guard): the bubble says so with the reason; Resend presses Enter in that session", A, async () => {
+    const real = window.fetch, keys = [];
+    window.fetch = (u, o) => { if (String(u) === "/api/session/key") { keys.push(JSON.parse(o.body)); return Promise.resolve(new Response("{\"ok\":true}", { headers: { "content-type": "application/json" } })); } return real(u, o); };
+    try {
+      const n = T.node("Beta"); select(n.s.sessionId);
+      const p = { text: "and the tests too", at: Date.now(), status: "sending", ...toSession(n.s.sessionId, "Beta"), send: async () => {}, busy: () => false };
+      popup.pending.push(p); await deliver(p);
+      p.typedAt -= 10_000; // typed 10 s ago, refused 2 s later
+      const reason = "Context guard: this session is ~412k tokens and has been idle 2.3 h.\nTo continue anyway, send the prompt again.";
+      const blocked = { id: "blk-1", role: "blocked", text: "and the tests too", reason, at: p.typedAt + 2000 };
+      const chat = [...popup.chat, blocked];
+      renderPopupChat(chat);
+      const line = () => popup.log.els.get(`pending-${p.at}`);
+      const r = { status: p.status, cls: line().classList.contains("st-blocked"), why: line().querySelector(".why")?.textContent, label: /Not sent: blocked by a hook/.test(line().textContent),
+        noRow: !$("p-log").textContent.includes("Original prompt"), resend: !!line().querySelector("[data-resend]") };
+      renderPopupChat(popup.chat); r.staysBlocked = p.status; // a poll without the line doesn't undo it
+      line().querySelector("[data-resend]").click();
+      for (let i = 0; i < 30 && !["sent", "queued"].includes(p.status); i++) await T.sleep(50);
+      r.keys = keys.map((k) => [k.key, k.sessionId === n.s.sessionId]); r.after = ["sent", "queued"].includes(p.status); // queued: the Beta fixture is busy
+      renderPopupChat(chat); r.oldBlockIgnored = p.status !== "blocked";
+      renderPopupChat([...chat, { id: "y-1", role: "you", text: "and the tests too", at: Date.now() }]); r.settled = !popup.pending.includes(p);
+      T.eq(r, { status: "blocked", cls: true, why: reason, label: true, noRow: true, resend: true, staysBlocked: "blocked", keys: [["enter", true]], after: true, oldBlockIgnored: true, settled: true }, "blocked");
+      return "ok";
+    } finally { window.fetch = real; popup.pending.length = 0; select(null); }
+  });
   await check("not delivered: the error names the session and why; no Retry when it has ended", A, async () => {
     const n = T.node("Compacted"); select(n.s.sessionId);
     const gone = { text: "both 1", at: Date.now(), status: "sending", ...toSession(n.s.sessionId, "ABC-12"),

@@ -32,7 +32,9 @@ export const isDispatcher = (s: Session) => s.cwd === DISPATCHER_DIR;
  * the map can tint it with that session's colour. tool: a compact tool-activity row (icon, label, detail).
  */
 export interface ChatLine {
-  id: string; at: number; role: "you" | "switchboard" | "notice" | "tool" | "ask" | "shell"; text: string;
+  id: string; at: number; role: "you" | "switchboard" | "notice" | "tool" | "ask" | "shell" | "blocked"; text: string;
+  /** role "blocked": a UserPromptSubmit hook (e.g. the context guard) refused the prompt in `text`; this is its reason. */
+  reason?: string;
   /** role "shell": something you typed that isn't a message: a `!` shell command or a /slash command, and what it printed. */
   output?: string;
   session?: string; tool?: { name: string; icon: string; label: string; detail: string };
@@ -365,6 +367,14 @@ function readChatTail(tail: string, cwd: string) {
     const content = entry.message?.content;
     // A message typed while the session was busy is taken in mid-turn and only recorded as a queued_command attachment,
     // never as a user line (2.1.300). Task notifications use the same attachment, but start with "<task-notification>".
+    // A UserPromptSubmit hook refused a prompt (the context guard blocks the first one after a long idle): Claude Code
+    // writes only this system line and puts the text back in the input box. No "you" line follows until it's sent again.
+    const ending = entry.type === "system" ? entry.promptSubmitEnding?.ending : undefined;
+    if (ending?.kind === "blocked_by_hook") {
+      const text = String(entry.content ?? "").match(/\nOriginal prompt: ([\s\S]*)$/)?.[1].trim() ?? "";
+      chat.push({ id: entry.uuid, at, role: "blocked", text, reason: String(ending.reason ?? "").trim() });
+      continue;
+    }
     const queued = entry.type === "attachment" && entry.attachment?.type === "queued_command" && entry.attachment.commandMode === "prompt" ? entry.attachment : undefined;
     if (queued) {
       const text = (typeof queued.prompt === "string" ? queued.prompt : textOf(queued.prompt)).trim();

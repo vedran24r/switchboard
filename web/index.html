@@ -60,7 +60,8 @@
   .msg.you { align-self: flex-end; background: var(--you); color: var(--you-ink); border-bottom-right-radius: 4px; }
   /* Messages not yet in the session's transcript: only "queued" (waiting behind a busy turn) is pale. */
   .msg.you.st-queued { opacity: .6; }
-  .msg.you.st-failed, .msg.you.st-stale { background: var(--handoff); }
+  .msg.you.st-failed, .msg.you.st-stale, .msg.you.st-blocked { background: var(--handoff); }
+  .msg .why { display: block; white-space: pre-line; font-size: 11.5px; margin: 2px 0 4px; }
   .msg .hide { position: absolute; top: 2px; right: 4px; border: 0; background: none; color: inherit; opacity: 0; font-size: 15px; line-height: 1; padding: 2px 4px; cursor: pointer; }
   .msg:hover .hide { opacity: .6; } .msg .hide:hover { opacity: 1; }
   .msg .retry { margin-left: 8px; border: 1px solid currentColor; background: none; color: inherit; border-radius: 6px; padding: 0 8px; font-size: 11px; }
@@ -853,7 +854,10 @@ function pendingLabel(c) {
   const discard = `<button type="button" class="retry discard" data-discard="${esc(c.id)}">Discard</button>`;
   return { sending: "sending…", queued: `Queued: it's busy, it will read this next${discard}`, sent: "Sent",
     untracked: c.text.startsWith("!") ? "Sent as a shell command (it isn't shown in the chat)" : "Sent as a command (it isn't shown in the chat)",
-    failed: `Not delivered${c.error ? ": " + esc(c.error) : ""}${c.gone ? "" : retry}${discard}`, stale: `Not picked up yet${retry}${discard}` }[c.status ?? "sending"];
+    failed: `Not delivered${c.error ? ": " + esc(c.error) : ""}${c.gone ? "" : retry}${discard}`, stale: `Not picked up yet${retry}${discard}`,
+    // A UserPromptSubmit hook (the context guard) refused it; the text is back in the session's input box, so Resend
+    // presses Enter there instead of typing it again (typing would double it). Only a session's input can be pressed.
+    blocked: `Not sent: blocked by a hook<span class="why">${esc(c.error || "")}</span>${c.to ? `<button type="button" class="retry" data-resend="${esc(c.id)}">Resend</button>` : ""}${discard}` }[c.status ?? "sending"];
 }
 document.addEventListener("click", (e) => {
   const img = e.target.closest?.(".chatimg");
@@ -1067,6 +1071,10 @@ function settlePending(list, chat, busy) {
     const p = list[i];
     if (p.typedAt && chat.length >= 40 && oldest > p.typedAt + 1000) { list.splice(i, 1); saveOutbox(); continue; }
     if (chat.some((c) => (c.role === "you" || c.role === "shell") && c.at >= p.at - 5000 && squash(c.text).includes(squash(p.text)))) { list.splice(i, 1); saveOutbox(); continue; }
+    // Refused by a hook since it was last typed or resent: it's back in the input box, not on its way.
+    const block = p.typedAt && chat.findLast((c) => c.role === "blocked" && c.at >= p.typedAt - 1000 && squash(c.text).includes(squash(p.text)));
+    if (block) { if (p.status !== "blocked" && !p.delivering) { p.status = "blocked"; p.error = block.reason; } continue; }
+    if (p.status === "blocked") continue;
     // `!cmd` and /commands: some (/clear, /exit…) never show up in the chat. Once the session is idle and it's still
     // missing, say it went out instead of looking queued forever.
     if (/^[!/]/.test(p.text) && (p.status === "sent" || p.status === "queued" || p.status === "stale") && !busy && Date.now() - p.typedAt > COMMAND_MS) p.status = "untracked";
@@ -1074,10 +1082,12 @@ function settlePending(list, chat, busy) {
     if ((p.status === "sent" || p.status === "queued") && !busy && Date.now() - p.typedAt > STALE_MS && !/^[!/]/.test(p.text)) p.status = "stale";
   }
 }
-const pendingItems = (list) => list.map((p) => ({ id: `pending-${p.at}`, role: "you", text: p.text, at: p.at, pending: true, status: p.status, error: p.error, gone: p.gone }));
+const pendingItems = (list) => list.map((p) => ({ id: `pending-${p.at}`, role: "you", text: p.text, at: p.at, pending: true, status: p.status, error: p.error, gone: p.gone, to: p.to }));
+// "blocked" lines only mark your pending message (settlePending); they aren't rows of their own.
+const shown = (chat) => chat.filter((c) => c.role !== "blocked");
 function renderChat(d) {
   settlePending(pendingSays, d.chat || [], d.state === "working");
-  const items = [...(d.chat || []), ...pendingItems(pendingSays)];
+  const items = [...shown(d.chat || []), ...pendingItems(pendingSays)];
   if (items.length) mainLog.sync(items);
 }
 
@@ -1162,12 +1172,25 @@ async function deliver(p) {
   } finally { p.delivering = false; }
   p.redraw(); saveOutbox();
 }
+// Resend a message a hook refused: press Enter in its session, where Claude Code put the text back.
+async function resendBlocked(p) {
+  if (p.delivering || !p.to) return;
+  p.delivering = true; p.status = "sending"; p.redraw();
+  try {
+    await post("/api/session/key", { sessionId: p.to, key: "enter" });
+    p.typedAt = Date.now(); p.status = p.busy() ? "queued" : "sent";
+  } catch (e) { p.status = "blocked"; p.error = `${p.error}\nResend didn't go through: ${e.message}`; } // still in the input box
+  finally { p.delivering = false; }
+  p.redraw(); saveOutbox();
+}
 const findPending = (id) => [[pendingSays, pendingSays.find((x) => `pending-${x.at}` === id)], [popup.pending, popup.pending?.find((x) => `pending-${x.at}` === id)]].find(([, p]) => p);
 // Retry or discard a message that failed or was never picked up.
 document.addEventListener("click", (e) => {
   const retry = e.target.closest?.(".retry")?.dataset.retry, discard = e.target.closest?.(".discard")?.dataset.discard;
-  const hit = findPending(retry || discard);
+  const resend = e.target.closest?.("[data-resend]")?.dataset.resend;
+  const hit = findPending(retry || discard || resend);
   if (!hit) return;
+  if (resend) return resendBlocked(hit[1]);
   const [list, p] = hit;
   if (retry) return deliver(p);
   list.splice(list.indexOf(p), 1);
@@ -2141,7 +2164,7 @@ async function pollPopup() {
 function renderPopupChat(chat) {
   popup.chat = chat;
   settlePending(popup.pending, chat, nodes.get(popup.id)?.s.state === "working");
-  const items = [...chat, ...pendingItems(popup.pending)];
+  const items = [...shown(chat), ...pendingItems(popup.pending)];
   if (items.length) popup.log.sync(items);
   else $("p-log").innerHTML = `<div class="hint">No messages yet.</div>`;
 }

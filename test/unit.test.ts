@@ -458,6 +458,20 @@ test("a message typed while the session was busy (taken in mid-turn) shows as yo
   assert.deepEqual(you.map((c) => [c.id, c.text, c.queued]), [["u1", "fix the picker for Sam", undefined], ["q1", text, true], ["q3", "and the same again later", undefined]]);
 });
 
+test("a prompt a hook blocked (context guard) becomes a 'blocked' line with the prompt and the reason", async () => {
+  const { readChat } = await import("../src/dispatcher.ts");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sb-blocked-")), file = path.join(dir, "t.jsonl"), at = (s: number) => new Date(Date.parse("2026-11-18T16:24:00Z") + s * 1000).toISOString();
+  const reason = "Context guard: this session is ~412k tokens and has been idle 2.3 h, so the cache expired.\nTo continue anyway, send the prompt again (it goes through the second time).";
+  // The shape Claude Code 2.1.316 writes (captured 2026-11-18 with a block-once hook).
+  writeFileSync(file, [{ type: "user", uuid: "u1", timestamp: at(0), message: { role: "user", content: "fix it for Sam" } },
+    { type: "system", subtype: "informational", uuid: "b1", timestamp: at(60), isMeta: false, level: "warning", preventContinuation: true,
+      content: `UserPromptSubmit operation blocked by hook:\n${reason}\n\nOriginal prompt: and the tests\ntoo`,
+      promptSubmitEnding: { ending: { kind: "blocked_by_hook", reason }, promptKept: false } },
+    { type: "system", subtype: "informational", uuid: "s2", timestamp: at(61), content: "something else" },
+  ].map((x) => JSON.stringify(x)).join("\n") + "\n");
+  assert.deepEqual(readChat(file).chat.map((c) => [c.role, c.text, c.reason]), [["you", "fix it for Sam", undefined], ["blocked", "and the tests\ntoo", reason]]);
+});
+
 test("the summary written after a /compact isn't shown as your message", async () => {
   const { readChat } = await import("../src/dispatcher.ts");
   const dir = mkdtempSync(path.join(os.tmpdir(), "sb-compact-")), file = path.join(dir, "t.jsonl"), at = (s: number) => new Date(Date.parse("2026-11-04T15:00:00Z") + s * 1000).toISOString();
