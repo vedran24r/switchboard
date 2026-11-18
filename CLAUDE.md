@@ -163,3 +163,7 @@ This file is for *developing* Switchboard. The dispatcher's own rules are in `di
 - The sheet's chips/keys/type bar (`#p-tools`) is behind a "⌨ Keys" toggle (`toolsOpen`, closed on every load; open it covered
   much of a phone screen, 2026-11-17). Browser tests' HELPERS set `toolsOpen = true`; the toggle has its own check. ⌫ = `bksp` → tmux `BSpace`.
   Phone header: `.close` (Back) sits inside `.phead`, which is a two-line flex row on phone (Details is a dropdown there, like the desk).
+- Pocket dropped (2026-11-18): `~/.switchboard/config.json` `backend: "tmux"`, `claude()` in ~/.zshrc is `sb run`, launchd
+  `ai.pocket-sessions` booted out + disabled (`launchctl enable … && launchctl bootstrap gui/$UID ~/Library/LaunchAgents/ai.pocket-sessions.plist`
+  to undo). Leftover `pk-*` sessions on `tmux -L pocket` still work: with Pocket down, typing/keys go straight to that tmux
+  (multi-line text is flattened to one line there). The Pocket code paths stay for now.
